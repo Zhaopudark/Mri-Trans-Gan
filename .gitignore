@@ -2,3 +2,6 @@
 *tmp
 *.bak
 *~
+*.png
+*.txt
+*.csv
