@@ -1,0 +1,8 @@
+tensorflow
+pytorch
+pylint 
+matplotlib 
+opencv-python  
+nibabel  
+scipy 
+image
