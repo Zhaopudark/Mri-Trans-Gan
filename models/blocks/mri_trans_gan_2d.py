@@ -11,9 +11,9 @@ import os
 import tensorflow as tf
 base = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(base,'../'))
-from layers.convolutions.conv2d import Conv2D,UpSampalingConv2D
-from layers.normalizations import InstanceNormalization
-from layers.activations import Activation
+from craft.convolutions.conv2d import Conv2D,UpSampalingConv2D
+from craft.normalizations import InstanceNormalization
+from craft.activations import Activation
 """
 Cycle GAN Generator blocks
 """

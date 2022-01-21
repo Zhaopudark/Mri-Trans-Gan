@@ -4,6 +4,7 @@
 """
 import numpy as np 
 import math
+import logging
 def cut_img_3D(img):
     """
     将3D的数据进行剪裁，去除3D黑边
@@ -283,7 +284,7 @@ def index_cal(valid_range:list,sub_seq_len:int,sub_seq_num=None):
             if sub_seq_num*sub_seq_len < valid_len:
                 old_sub_seq_num = sub_seq_num
                 sub_seq_num = math.ceil(valid_len/sub_seq_len)
-                print("Warning: sub_seq_num has been changed from {} to {}.".format(old_sub_seq_num,sub_seq_num))
+                logging.warning("sub_seq_num has been changed from {} to {}.".format(old_sub_seq_num,sub_seq_num))
             else:
                 pass
     index_range_buf = []

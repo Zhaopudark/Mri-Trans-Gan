@@ -3,7 +3,6 @@ Transformer 相关的基本层
 """
 import sys
 import os
-import warnings
 import tensorflow as tf
 base = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(base)

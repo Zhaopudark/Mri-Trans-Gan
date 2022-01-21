@@ -8,9 +8,9 @@ import tensorflow as tf
 import numpy as np 
 base = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(base,'../'))
-from layers.convolutions.conv2d import Conv2DVgg
-from layers.convolutions.conv3d import Vgg2Conv3D
-from layers.denses import DenseVgg
+from craft.convolutions.conv2d import Conv2DVgg
+from craft.convolutions.conv3d import Vgg2Conv3D
+from craft.denses import DenseVgg
 class Vgg16(tf.keras.Model):
     def __init__(self,path="D:\\Datasets\\VGG\\vgg16.npy",
                  name=None,

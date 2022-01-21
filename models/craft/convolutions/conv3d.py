@@ -5,7 +5,6 @@
 from re import template
 import sys
 import os
-import warnings
 import tensorflow as tf
 base = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(base)

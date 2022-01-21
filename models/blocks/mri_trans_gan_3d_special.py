@@ -8,12 +8,13 @@ __all__ = [
 ]
 import sys
 import os
+import logging
 import tensorflow as tf
 base = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(base,'../'))
-from layers.convolutions.conv3d import Conv3D,UpSampalingConv3D,UpSubpixelConv3D
-from layers.normalizations import InstanceNormalization
-from layers.activations import Activation
+from craft.convolutions.conv3d import Conv3D,UpSampalingConv3D,UpSubpixelConv3D
+from craft.normalizations import InstanceNormalization
+from craft.activations import Activation
 """
 Cycle GAN Generator blocks
 """
@@ -194,7 +195,7 @@ class UpSampling(tf.keras.Model):#uk
                                            dtype=dtype,
                                            **kwargs)
         elif up_sampling_method == "sub_pixel_up":
-            print("Warning: UpSampling has been replaced by UpSubpixelConv3D")
+            logging.warning("UpSampling has been replaced by UpSubpixelConv3D")
             self.l1_up = UpSubpixelConv3D(filters=filters,
                                           kernel_size=[3,3,3],
                                           strides=[1,2,2],

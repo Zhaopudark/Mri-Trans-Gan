@@ -1,5 +1,6 @@
 import os 
 import sys
+import logging
 import math
 import tensorflow as tf
 import random
@@ -51,7 +52,7 @@ class PacthesProcesser():
                 if sub_seq_num*sub_seq_len < valid_len:
                     old_sub_seq_num = sub_seq_num
                     sub_seq_num = math.ceil(valid_len/sub_seq_len)
-                    print("Warning: sub_seq_num has been changed from {} to {}.".format(old_sub_seq_num,sub_seq_num))
+                    logging.warning("sub_seq_num has been changed from {} to {}.".format(old_sub_seq_num,sub_seq_num))
                 else:
                     pass
         index_range_buf = []

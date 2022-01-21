@@ -1,3 +1,4 @@
+import logging
 import tensorflow as tf 
 __all__ = [
     "activation_slect",
@@ -8,7 +9,7 @@ def activation_slect(activation_name):# 统一用tf.keras.activations内实现
     if activation_name == "relu":
         return tf.keras.activations.relu
     elif activation_name == "leaky_relu":
-        print("Warining: You have used leaky_relu! Remember give specific 'alpha' parameter to it!Default threshold is 0.")
+        logging.warning("You have used leaky_relu! Remember give specific 'alpha' parameter to it!Default threshold is 0.")
         return tf.keras.activations.relu
     elif activation_name == "gelu":
         return tf.keras.activations.gelu

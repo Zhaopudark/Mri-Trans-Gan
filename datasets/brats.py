@@ -12,7 +12,7 @@ import sys
 import nibabel as nib
 import numpy as np
 import platform
-import warnings
+import logging
 from subprocess import check_output
 import tensorflow as tf
 import json
@@ -230,7 +230,7 @@ class BraTS():
             """
             在一个目录中抽取随机的若干样本到新目录
             """
-            warnings.warn("在一个目录中抽取(复制)随机的若干样本到新目录的方法占用空间大,弃用,将全面采用logs的方式", DeprecationWarning)
+            logging.info("在一个目录中抽取(复制)随机的若干样本到新目录的方法占用空间大,弃用,将全面采用logs的方式", DeprecationWarning)
             t1_buf = []
             for (dir_name,_, file_list) in os.walk(source):
                 for file_name in file_list:
@@ -336,7 +336,7 @@ class BraTS():
                         self._save_nii_file(norm_out,norm_out_path,affine=affine,header=header)
                         print(norm_out_path)
             elif self._norm == "z_score":
-                print("Warning: z_score 不仅将有效区域进行标准化~N({},1.0) 也将背景归0 有可能会影响模型性能".format(foreground_offset))
+                logging.warning("z_score 不仅将有效区域进行标准化~N({},1.0) 也将背景归0 有可能会影响模型性能".format(foreground_offset))
                 for data in datas:
                     mask,_,_ = self._read_nii_file(data.mask_path,dtype=np.int16)
                     for key in data.data_dict.keys():
