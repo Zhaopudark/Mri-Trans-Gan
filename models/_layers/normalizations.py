@@ -14,7 +14,7 @@ def _norm_wrapper_mixed(cls):
     默认为正常计算
     因此一旦指定了dtype 就需要进行patch
     NOTE 不考虑 float64
-    NOTE 通过添加类变量 cls._mixed_precision_fused对__init__()和call()进行装饰
+    NOTE 通过添加类属性 cls._mixed_precision_fused对__init__()和call()进行装饰
     对__init__()的装饰在实例化之前 以捕添加获用户指定的计算精度的功能 因此是对类装饰 修改类的初始化方法 _init_wrapper(cls.__init__) 必须返回class
     对call()的装饰在实例化之后 依据捕获的计算精度考虑是否进行装饰 因此是对实例方法的装饰  只能放在_init_wrapper中而不可以放在wrappered_cls中
     """
@@ -43,7 +43,10 @@ def _norm_wrapper_mixed(cls):
                 pass 
             init(self,*args,**kwargs)
             if self._mixed_precision_fused:
-                self.call = _call_wrapper(self.call)
+                if hasattr(self,"call"):
+                    self.call = _call_wrapper(self.call)
+                else:
+                    raise AttributeError("{} dose not have call func.".format(self))
         return wrappered_init
     class WrapperedCls(cls): 
         _mixed_precision_fused = False
@@ -51,7 +54,6 @@ def _norm_wrapper_mixed(cls):
         def __init__(self,*args,**kwargs):
             super().__init__(*args,**kwargs)
     return WrapperedCls
-
 
 # @_norm_wrapper_mixed
 class BatchNormalization(tf.keras.layers.BatchNormalization):
@@ -98,13 +100,16 @@ class LayerNormalization(tf.keras.layers.LayerNormalization):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
 #########################################################
-@_norm_wrapper_mixed
+# @_norm_wrapper_mixed
 class GroupNormalization(tf.keras.layers.Layer):
     """
     Copy from the tfa.layers.GroupNormalization 
-    https://www.tensorflow.org/api_docs/python/tf/keras/layers/LayerNormalization
     remove input type check
     patch the call func to make sure "norm" is not calculated in float16
+
+    input:...see the reference
+    output:...see the reference
+    reference:https://www.tensorflow.org/api_docs/python/tf/keras/layers/LayerNormalization
     """
     def __init__(
         self,
@@ -145,6 +150,11 @@ class GroupNormalization(tf.keras.layers.Layer):
         self.built = True
         super().build(input_shape)
     def call(self, inputs):
+        input_dtype = inputs.dtype
+        if input_dtype in ('float16', 'bfloat16') and self.dtype == 'float32':
+            # If mixed precision is used, cast inputs to float32 so that this is at
+            # least as numerically stable as the fused version.
+            inputs = tf.cast(inputs, 'float32')
         input_shape = tf.keras.backend.int_shape(inputs)
         tensor_input_shape = tf.shape(inputs)
         reshaped_inputs, group_shape = self._reshape_into_groups(
@@ -156,6 +166,7 @@ class GroupNormalization(tf.keras.layers.Layer):
             outputs = tf.reshape(normalized_inputs, tensor_input_shape)
         else:
             outputs = normalized_inputs
+        outputs = tf.cast(outputs, input_dtype)
         return outputs
     def get_config(self):
         config = {
@@ -266,6 +277,7 @@ class GroupNormalization(tf.keras.layers.Layer):
                 initializer=self.gamma_initializer,
                 regularizer=self.gamma_regularizer,
                 constraint=self.gamma_constraint,
+                experimental_autocast=False
             )
         else:
             self.gamma = None
@@ -279,6 +291,7 @@ class GroupNormalization(tf.keras.layers.Layer):
                 initializer=self.beta_initializer,
                 regularizer=self.beta_regularizer,
                 constraint=self.beta_constraint,
+                experimental_autocast=False
             )
         else:
             self.beta = None
@@ -295,10 +308,13 @@ class GroupNormalization(tf.keras.layers.Layer):
 class InstanceNormalization(GroupNormalization):
     """
     Copy from the tfa.layers.InstanceNormalization
-    https://tensorflow.google.cn/addons/api_docs/python/tfa/layers/InstanceNormalization
     patch the call func to make sure "norm" is not calculated in float16
     if GroupNormalization's call func has been patched by @_norm_wrapper_mixed, there is
     no need to patch again in InstanceNormalization
+
+    input:...see the reference
+    output:...see the reference
+    reference:https://tensorflow.google.cn/addons/api_docs/python/tfa/layers/InstanceNormalization
     """
     def __init__(self,*args,**kwargs):
         if "groups" in kwargs:
@@ -306,62 +322,78 @@ class InstanceNormalization(GroupNormalization):
         kwargs["groups"] = -1
         super().__init__(*args,**kwargs)   
 #------------------------------------------------------------------------------------------------------------------------------#
-class SpectralNormalization(tf.keras.layers.Layer):
-    """SpectralNormalization
-    为谱范数正则化定义若干超参数用以研究
-    分别是迭代次数 
-    iter_k
-    是否clip
+
+class SpectralNormalization(tf.keras.layers.Wrapper):
     """
-    def __init__(self,iter_k=1,clip_flag=True,clip_range=100.0,name=None,dtype=None):
-        super(SpectralNormalization,self).__init__(name=name,dtype=None)#对norm的操作不作混合精度 
-        self.iter_k = iter_k
-        self.clip_flag = clip_flag
-        self.clip_range = clip_range
-        
-        if self.clip_flag:
-            self.call = self.with_clip
+    Copy from the tfa.layers.SpectralNormalization
+    input:...see the reference
+    output:...see the reference
+    reference:https://tensorflow.google.cn/addons/api_docs/python/tfa/layers/SpectralNormalization
+    """
+    def __init__(self,layer,power_iterations=1,**kwargs):
+        super().__init__(layer,**kwargs)
+        if power_iterations <= 0:
+            raise ValueError(
+                "`power_iterations` should be greater than zero, got "
+                "`power_iterations={}`".format(power_iterations)
+            )
+        self.power_iterations = power_iterations
+        self._initialized = False
+    def build(self, input_shape):
+        """Build `Layer`"""
+        super().build(input_shape)
+        input_shape = tf.TensorShape(input_shape)
+        self.input_spec = tf.keras.layers.InputSpec(shape=[None] + input_shape[1:])
+        if hasattr(self.layer, "kernel"):
+            self.w = self.layer.kernel
+        elif hasattr(self.layer, "embeddings"):
+            self.w = self.layer.embeddings
         else:
-            self.call = self.no_clip
-        print(self.iter_k)
-        print(self.clip_flag)
-        print(self.clip_range)
-    def build(self,input_shape,w):
-        super(SpectralNormalization,self).build(input_shape)
-        self.w = w
-        self.w_shape = input_shape
-        self.u = self.add_weight(shape=(1, self.w_shape[-1]),
-                                 initializer=tf.initializers.TruncatedNormal(stddev=0.02),
-                                 trainable=False,
-                                 name="sn_u")
-    def call(self,x,training):
-        print("call 必须被重载！！！！")
-    def with_clip(self,x,training):
+            raise AttributeError(
+                "{} object has no attribute 'kernel' nor "
+                "'embeddings'".format(type(self.layer).__name__)
+            )
+        self.w_shape = self.w.shape.as_list()
+        self.u = self.add_weight(
+            shape=(1, self.w_shape[-1]),
+            initializer=tf.initializers.TruncatedNormal(stddev=0.02),
+            trainable=False,
+            name="sn_u",
+            dtype=self.w.dtype,
+        )
+    def call(self,inputs,training=None):
+        """Call `Layer`"""
+        if training is None:
+            training = tf.keras.backend.learning_phase()
         if training:
-            w = tf.reshape(x,[-1,self.w_shape[-1]])
-            u = self.u
-            with tf.name_scope("spectral_normalize"):
-                for _ in range(self.iter_k):
-                    v = tf.math.l2_normalize(tf.matmul(u,w,transpose_b=True)) # u@W.T 得到v
-                    u = tf.math.l2_normalize(tf.matmul(v,w)) # v@W 得到u
-                sigma = tf.matmul(tf.matmul(v,w),u,transpose_b=True)
-                self.w.assign(tf.clip_by_value(tf.math.divide_no_nan(self.w,sigma),clip_value_min=-self.clip_range,clip_value_max=self.clip_range))
-                self.u.assign(u)
-        else:
-            pass
-    def no_clip(self,x,training):
-        if training:
-            w = tf.reshape(x,[-1,self.w_shape[-1]])
-            u = self.u
-            with tf.name_scope("spectral_normalize"):
-                for _ in range(self.iter_k):
-                    v = tf.math.l2_normalize(tf.matmul(u,w,transpose_b=True)) # u@W.T 得到v
-                    u = tf.math.l2_normalize(tf.matmul(v,w)) # v@W 得到u
-                sigma = tf.matmul(tf.matmul(v,w),u,transpose_b=True)
-                self.w.assign(tf.math.divide_no_nan(self.w,sigma))
-                self.u.assign(u)
-        else:
-            pass
+            self.normalize_weights()
+        tf.print(training)
+        output = self.layer(inputs)
+        return output
+    def compute_output_shape(self, input_shape):
+        return tf.TensorShape(self.layer.compute_output_shape(input_shape).as_list())
+    def normalize_weights(self):
+        """Generate spectral normalized weights.
+        This method will update the value of `self.w` with the
+        spectral normalized value, so that the layer is ready for `call()`.
+        """
+        w = tf.reshape(self.w, [-1, self.w_shape[-1]])
+        u = self.u
+        with tf.name_scope("spectral_normalize"):
+            for _ in range(self.power_iterations):
+                v = tf.math.l2_normalize(tf.matmul(u, w, transpose_b=True))
+                u = tf.math.l2_normalize(tf.matmul(v, w))
+            u = tf.stop_gradient(u)
+            v = tf.stop_gradient(v)
+            sigma = tf.matmul(tf.matmul(v, w), u, transpose_b=True)
+            self.u.assign(tf.cast(u, self.u.dtype))
+            self.w.assign(
+                tf.cast(tf.reshape(self.w / sigma, self.w_shape), self.w.dtype)
+            )
+    def get_config(self):
+        config = {"power_iterations": self.power_iterations}
+        base_config = super().get_config()
+        return {**base_config, **config}
     
 # class SpectralNormalization(tf.keras.layers.Layer):
 #     """SpectralNormalization
@@ -524,10 +556,13 @@ if __name__=="__main__":
             print(y)
     import tensorflow_addons as tfa
     for policy in policy_list:
-        GN1 = tfa.layers.GroupNormalization(axis=-1,dtype=policy)
+        # GN1 = tfa.layers.GroupNormalization(axis=-1,dtype=policy)
+        GN1 = tf.keras.layers.LayerNormalization(axis=[1,2,3],dtype=policy)
         GN1.build(input_shape=[5, 20, 30, 128])
-        GN2 = GroupNormalization(axis=-1,dtype=policy)
+        GN2 = tfa.layers.GroupNormalization(axis=-1,groups=1,dtype=policy)
         GN2.build(input_shape=[5, 20, 30, 128])
+        GN3 = GroupNormalization(axis=-1,groups=1,dtype=policy)
+        GN3.build(input_shape=[5, 20, 30, 128])
         for _ in range(10):
             if isinstance(policy,tf.keras.mixed_precision.Policy):
                 x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float16)
@@ -535,7 +570,25 @@ if __name__=="__main__":
                 x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float32)
             y = tf.reduce_mean(GN1(x,training=True)-GN2(x,training=True))
             print(y)
-    
+        print("***************************")
+        for _ in range(10):
+            if isinstance(policy,tf.keras.mixed_precision.Policy):
+                x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float16)
+            else:
+                x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float32)
+            y = tf.reduce_mean(GN1(x,training=True)-GN3(x,training=True))
+            print(y)
+        print("----------------------------------")
+    # InstanceNormalization(groups=12)
+    # x = tf.Variable(tf.zeros(shape=[5, 20, 30, 128],dtype=tf.float32))
+    # y = tf.reshape(x,x.shape)
+    # print(y.dtype) 
+    # tf.keras.mixed_precision.set_global_policy(
+    # policy1
+    # )
+    # x = tf.Variable(tf.zeros(shape=[5, 20, 30, 128],dtype=tf.float32))
+    # y = tf.reshape(x,x.shape)
+    # print(y.dtype) 
 
 
     # input_shape = tf.keras.backend.int_shape(x)
