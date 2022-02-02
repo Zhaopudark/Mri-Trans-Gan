@@ -277,7 +277,7 @@ class GroupNormalization(tf.keras.layers.Layer):
                 initializer=self.gamma_initializer,
                 regularizer=self.gamma_regularizer,
                 constraint=self.gamma_constraint,
-                experimental_autocast=False
+                experimental_autocast=False,
             )
         else:
             self.gamma = None
@@ -291,7 +291,7 @@ class GroupNormalization(tf.keras.layers.Layer):
                 initializer=self.beta_initializer,
                 regularizer=self.beta_regularizer,
                 constraint=self.beta_constraint,
-                experimental_autocast=False
+                experimental_autocast=False,
             )
         else:
             self.beta = None
@@ -322,9 +322,9 @@ class InstanceNormalization(GroupNormalization):
         kwargs["groups"] = -1
         super().__init__(*args,**kwargs)   
 #------------------------------------------------------------------------------------------------------------------------------#
-
 class SpectralNormalization(tf.keras.layers.Wrapper):
     """
+    TODO behavior needs changed 
     Copy from the tfa.layers.SpectralNormalization
     input:...see the reference
     output:...see the reference
@@ -532,9 +532,9 @@ if __name__=="__main__":
         print(BN2.beta.shape)
         for _ in range(10):
             if isinstance(policy,tf.keras.mixed_precision.Policy):
-                x = tf.random.normal(shape=[128,34,36],dtype=tf.float16)
+                x = tf.random.normal(shape=[128,34,36],dtype=tf.float16,mean=5.0,stddev=10.0)
             else:
-                x = tf.random.normal(shape=[128,34,36],dtype=tf.float32)
+                x = tf.random.normal(shape=[128,34,36],dtype=tf.float32,mean=5.0,stddev=10.0)
             y = tf.reduce_mean(BN(x,training=True)-BN2(x,training=True))
             print(y)
 
@@ -549,15 +549,19 @@ if __name__=="__main__":
         print(LN2.beta.shape)
         for _ in range(10):
             if isinstance(policy,tf.keras.mixed_precision.Policy):
-                x = tf.random.normal(shape=[12, 20, 30, 40],dtype=tf.float16)
+                x = tf.random.normal(shape=[12, 20, 30, 40],dtype=tf.float16,mean=5.0,stddev=10.0)
             else:
-                x = tf.random.normal(shape=[12, 20, 30, 40],dtype=tf.float32)
+                x = tf.random.normal(shape=[12, 20, 30, 40],dtype=tf.float32,mean=5.0,stddev=10.0)
             y = tf.reduce_mean(LN(x,training=True)-LN2(x,training=True))
             print(y)
+    def set_random_seed():
+        seed = 0x2020
+        np.random.seed(seed)
+        tf.random.set_seed(seed)
     import tensorflow_addons as tfa
     for policy in policy_list:
         # GN1 = tfa.layers.GroupNormalization(axis=-1,dtype=policy)
-        GN1 = tf.keras.layers.LayerNormalization(axis=[1,2,3],dtype=policy)
+        GN1 = tf.keras.layers.LayerNormalization(axis=-1,dtype=policy)
         GN1.build(input_shape=[5, 20, 30, 128])
         GN2 = tfa.layers.GroupNormalization(axis=-1,groups=1,dtype=policy)
         GN2.build(input_shape=[5, 20, 30, 128])
@@ -565,20 +569,61 @@ if __name__=="__main__":
         GN3.build(input_shape=[5, 20, 30, 128])
         for _ in range(10):
             if isinstance(policy,tf.keras.mixed_precision.Policy):
-                x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float16)
+                set_random_seed()
+                x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float16,mean=5.0,stddev=10.0)
             else:
-                x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float32)
+                set_random_seed()
+                x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float32,mean=5.0,stddev=10.0)
             y = tf.reduce_mean(GN1(x,training=True)-GN2(x,training=True))
             print(y)
         print("***************************")
         for _ in range(10):
             if isinstance(policy,tf.keras.mixed_precision.Policy):
-                x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float16)
+                set_random_seed()
+                x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float16,mean=5.0,stddev=10.0)
             else:
-                x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float32)
+                set_random_seed()
+                x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float32,mean=5.0,stddev=10.0)
             y = tf.reduce_mean(GN1(x,training=True)-GN3(x,training=True))
             print(y)
         print("----------------------------------")
+
+
+    # set_random_seed()
+    # model_2 = tf.keras.models.Sequential()
+    # baseline_norm = tf.keras.layers.LayerNormalization(axis=-1,dtype=dtype,input_shape=(28,28,3))
+    # model_2.add(baseline_norm)
+    # model_2.compile(loss="mse", optimizer="sgd")
+    # # x2 = random_generator_2.normal(shape=(1000,28,28,3),mean=5.0,stddev=10.0)
+
+    # x2 = np.random.normal(loc=5.0, scale=10.0, size=(1000, 28,28,3))
+    # model_2.fit(x2, x2, epochs=4, verbose=0)
+    # out_2 = model_2.predict(x2)
+    # print(np.mean(out_2))
+
+    # print(np.mean(out_1-out_2, axis=(0,1,2), dtype=np.float32))
+    # np.testing.assert_allclose(
+    #     np.mean(out_1-out_2, axis=(0,1,2), dtype=np.float32), (0.0, 0.0, 0.0), atol=2e-3
+    # )
+    # gn_= tf.keras.layers.LayerNormalization(axis=-1,dtype=dtype)
+    # gn_.build(input_shape=(1000,28,28,3))
+    # print(gn_.dtype)
+    # print(gn_.dtype_policy)
+    # print(gn_.compute_dtype)
+    # print(gn_.variable_dtype)
+    # for item in gn_.weights:
+    #     print(item.dtype,item.shape)
+
+    # gn_= GroupNormalization(axis=-1,groups=1,dtype=dtype)
+    # gn_.build(input_shape=(1000,28,28,3))
+    # print(gn_.dtype)
+    # print(gn_.dtype_policy)
+    # print(gn_.compute_dtype)
+    # print(gn_.variable_dtype)
+    # for item in gn_.weights:
+    #     print(item.dtype,item.shape)
+    
+    
     # InstanceNormalization(groups=12)
     # x = tf.Variable(tf.zeros(shape=[5, 20, 30, 128],dtype=tf.float32))
     # y = tf.reshape(x,x.shape)
@@ -589,7 +634,6 @@ if __name__=="__main__":
     # x = tf.Variable(tf.zeros(shape=[5, 20, 30, 128],dtype=tf.float32))
     # y = tf.reshape(x,x.shape)
     # print(y.dtype) 
-
 
     # input_shape = tf.keras.backend.int_shape(x)
     # tensor_input_shape = tf.shape(x)

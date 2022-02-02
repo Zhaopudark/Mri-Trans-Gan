@@ -271,6 +271,7 @@ from models.model_selector import ModelSelector
 from datasets.data_pipeline import PipeLine
 physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
 tf.config.experimental.set_memory_growth(physical_devices[0], True)
+tf.config.experimental.enable_op_determinism()
 # tf.config.experimental.enable_tensor_float_32_execution(False)
 # tf.config.experimental.set_synchronous_execution(True)
 pipe_line = PipeLine(args)

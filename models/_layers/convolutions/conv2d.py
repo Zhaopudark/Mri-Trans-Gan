@@ -20,78 +20,99 @@ __all__ = [
     "UpSampalingConv2D",
     # "SeparableConv2D",
 ]
-class Conv2D(tf.keras.layers.Layer):
-    def __init__(self,
-                 filters=None,
-                 kernel_size=None,
-                 strides=None,
-                 padding=None,
-                 use_bias=False,
-                 kernel_initializer='glorot_uniform', 
-                 bias_initializer='zeros',
-                 activation=None,
-                 spectral_normalization=False,
-                 name=None,
-                 dtype=None,**kwargs):
-        """
-        参照官方API
-        增加_Sn
-        filters = 8
-        kernel_size = (10,10) 
-        strides = (1,1)
-        padding = 'valid'
-        use_bias = False
-        
-        valid 时 不进行padding 正常卷积
-        SAME 时 默认zero padding
-        CONSTANT 时 默认 zero padding 
-        REFLECT  时 REFLECT padding
-        SYMMETRIC 时 SYMMETRIC padding
-        """
-        super(Conv2D,self).__init__(name=name,dtype=dtype)
-        self.filters = filters#out put channels
-        self.kernel_size = kernel_size#[3,3]
-        if len(strides)!=2:
-            raise ValueError("2D conv need 2 dimensions for strides")
-        self.strides = [1]+strides+[1]
-        self.padding = padding.upper()
-        self.use_bias = use_bias
-        self.activation = activation_slect(activation)
-        self.kernel_initializer = initializer_slect(kernel_initializer)
-        self.bias_initializer = initializer_slect(bias_initializer)
-        if spectral_normalization:
-            self.Sn = Sn(dtype=dtype,**kwargs)
-        self.spectral_normalization = spectral_normalization
-    def build(self,input_shape):
-        super(Conv2D,self).build(input_shape=input_shape)
-        #padding 接入的预处理
-        if len(input_shape)!=4:
-            raise ValueError("2D conv need 4 dimensions for input_shape")
-        output_shape,padding,padding_vect = Reconstruction.ConvCalculation(input_shape=input_shape,
-                                                                           filters=self.filters,
-                                                                           kernel_size=self.kernel_size,
-                                                                           strides=self.strides[1:-1],
-                                                                           padding=self.padding)
-        self.padding = padding
-        self.padding_vect = padding_vect  
-        self.w = self.add_weight('w',(self.kernel_size+[input_shape[-1]]+[self.filters]),initializer=self.kernel_initializer,trainable=True)
-        if self.use_bias:
-            self.b = self.add_weight('b',(output_shape[-1]),initializer=self.bias_initializer,trainable=True)
+
+
+class ConvPad(tf.keras.layers.Wrapper):
+    def __init__(self,layer,*args,**kwargs):
+        if not isinstance(layer,tf.keras.layers.Layer):
+            raise ValueError('Please initialize `Bidirectional` layer with a 'f'`tf.keras.layers.Layer` instance. Received: {layer}')
+        if "padding" in kwargs.keys():
+            if kwargs["padding"] is None:
+                pass 
+            elif kwargs["padding"].lower() == "valid":
+                pass 
+            elif kwargs["padding"].lower() == "same":
+                pass 
+            elif kwargs["padding"].lower() == "reflect": 
+        super(ConvPad,self).__init__(layer,*args,**kwargs)# get self.layer
+
+
+    def build(self, input_shape):
+        """Build `Layer`"""
+        super().build(input_shape)
+        input_shape = tf.TensorShape(input_shape)
+        self.input_spec = tf.keras.layers.InputSpec(shape=[None] + input_shape[1:])
+        if hasattr(self.layer, "kernel"):
+            self.w = self.layer.kernel
+        elif hasattr(self.layer, "embeddings"):
+            self.w = self.layer.embeddings
         else:
-            pass 
-        if self.spectral_normalization:
-            self.Sn.build(input_shape=self.w.shape,w=self.w)
-        output_shape = output_shape[:]
-        return output_shape
-    def call(self,x,training):
-        x = tf.pad(x,self.padding_vect,self.padding)
-        if self.spectral_normalization:
-            self.Sn(self.w,training)#适应计算类型
-        y = tf.nn.conv2d(input=x,filters=self.w,strides=self.strides,padding="VALID")#接管padding方式后 用valid实现等效
-        if self.use_bias:
-            y += self.b
-        y = self.activation(y)
-        return y  
+            raise AttributeError(
+                "{} object has no attribute 'kernel' nor "
+                "'embeddings'".format(type(self.layer).__name__)
+            )
+        self.w_shape = self.w.shape.as_list()
+        self.u = self.add_weight(
+            shape=(1, self.w_shape[-1]),
+            initializer=tf.initializers.TruncatedNormal(stddev=0.02),
+            trainable=False,
+            name="sn_u",
+            dtype=self.w.dtype,
+        )
+    def call(self,inputs,training=None):
+        """Call `Layer`"""
+        if training is None:
+            training = tf.keras.backend.learning_phase()
+        if training:
+            self.normalize_weights()
+        tf.print(training)
+        output = self.layer(inputs)
+        return output
+    def compute_output_shape(self, input_shape):
+        return tf.TensorShape(self.layer.compute_output_shape(input_shape).as_list())
+    def normalize_weights(self):
+        """Generate spectral normalized weights.
+        This method will update the value of `self.w` with the
+        spectral normalized value, so that the layer is ready for `call()`.
+        """
+        w = tf.reshape(self.w, [-1, self.w_shape[-1]])
+        u = self.u
+        with tf.name_scope("spectral_normalize"):
+            for _ in range(self.power_iterations):
+                v = tf.math.l2_normalize(tf.matmul(u, w, transpose_b=True))
+                u = tf.math.l2_normalize(tf.matmul(v, w))
+            u = tf.stop_gradient(u)
+            v = tf.stop_gradient(v)
+            sigma = tf.matmul(tf.matmul(v, w), u, transpose_b=True)
+            self.u.assign(tf.cast(u, self.u.dtype))
+            self.w.assign(
+                tf.cast(tf.reshape(self.w / sigma, self.w_shape), self.w.dtype)
+            )
+    def get_config(self):
+        config = {"power_iterations": self.power_iterations}
+        base_config = super().get_config()
+        return {**base_config, **config}
+
+class Conv2D(tf.keras.layers.Conv2D):
+    def __init__(self,*args,**kwargs):
+        """
+        Copy from the tf.keras.layers.Conv2D
+        input:...see the reference
+        output:...see the reference
+        reference:https://tensorflow.google.cn/api_docs/python/tf/keras/layers/Conv2D
+        """
+        super(Conv2D,self).__init__(*args,**kwargs)
+
+
+class Conv2DTranspose(tf.keras.layers.Conv2DTranspose):
+    def __init__(self,*args,**kwargs):
+        """
+        Copy from the tf.keras.layers.Conv2DTranspose
+        input:...see the reference
+        output:...see the reference
+        reference:https://tensorflow.google.cn/api_docs/python/tf/keras/layers/Conv2DTranspose
+        """
+        super(Conv2D,self).__init__(*args,**kwargs)
 #------------------------------------------------------------------------------------------------------------------------------#
 class Conv2DVgg(tf.keras.layers.Layer):
     def __init__(self,
@@ -145,77 +166,6 @@ class Conv2DVgg(tf.keras.layers.Layer):
             y += self.b
         y = self.activation(y)
         return tf.cast(y,dtype=tf.float32)  
-#------------------------------------------------------------------------------------------------------------------------------# 
-class Conv2DTranspose(tf.keras.layers.Layer):
-    def __init__(self,
-                 filters=None,
-                 kernel_size=None,
-                 strides=None,
-                 padding=None,
-                 output_padding=None,
-                 use_bias=False,
-                 kernel_initializer='glorot_uniform', 
-                 bias_initializer='zeros',
-                 activation=None,
-                 spectral_normalization=False,
-                 name=None,
-                 dtype=None,**kwargs):
-        """
-        为了精确控制反卷积的输出shape
-        需要指定output_shape
-        """
-        super(Conv2DTranspose,self).__init__(name=name,dtype=dtype)
-        self.filters = filters #out put channels
-        self.kernel_size = kernel_size #[3,3]
-        if len(strides)!=2:
-            raise ValueError("2D conv need 2 dimensions for strides")
-        self.strides = [1]+strides+[1]
-        self.padding = padding.upper()
-        self.output_padding = output_padding #不实现该逻辑
-        self.use_bias = use_bias
-        self.activation = activation_slect(activation)
-        self.kernel_initializer = initializer_slect(kernel_initializer)
-        self.bias_initializer = initializer_slect(bias_initializer)
-        if spectral_normalization:
-            self.Sn = Sn(dtype=dtype,**kwargs)
-        self.spectral_normalization = spectral_normalization
-    def build(self,input_shape,output_shape=None):
-        super(Conv2DTranspose,self).build(input_shape=input_shape)
-        #output_shape会重复指定输出深度 此处忽略该深度
-        if len(input_shape)!=4:
-            raise ValueError("2D conv need 4 dimensions for input_shape")
-        if output_shape == None:# 手动计算输出shape
-            output_shape = Reconstruction.ConvTransCal(input_shape=input_shape,filters=self.filters,kernel_size=self.kernel_size,strides=self.strides[1:-1],padding=self.padding)
-        if len(output_shape)!=4:
-            raise ValueError("2D conv need 4 dimensions for output_shape")
-        Reconstruction.ConvTransCheck(input_shape=input_shape[1:-1],output_shape=output_shape[1:-1],filters=self.filters,kernel_size=self.kernel_size,strides=self.strides[1:-1],padding=self.padding)
-        # 从正向卷积的角度 [self.filters]依旧是in_channels [input_shape[-1]]依旧是out_channels
-        self.w = self.add_weight('w',(self.kernel_size+[self.filters]+[input_shape[-1]]),initializer=self.kernel_initializer,trainable=True)
-        if self.use_bias:
-            self.b = self.add_weight('b',(output_shape[-1]),initializer=self.bias_initializer,trainable=True)
-        else:
-            pass 
-        self.tmp_output_shape = output_shape
-        if self.spectral_normalization:
-            self.Sn.build(input_shape=self.w.shape,w=self.w)
-        output_shape = output_shape[:]
-        return output_shape
-    def output_shape_tweaker(self,x):
-        B = int(x.shape[0])
-        if B != self.tmp_output_shape[0]:
-            current_output_shape = [B]+self.tmp_output_shape[1::]
-        else:
-            current_output_shape =self.tmp_output_shape[:]
-        return current_output_shape
-    def call(self,x,training):
-        tmp_output_shape = self.output_shape_tweaker(x)
-        if self.spectral_normalization:
-            self.Sn(self.w,training)#适应计算类型
-        y = tf.nn.conv2d_transpose(input=x,filters=self.w,output_shape=tmp_output_shape,strides=self.strides,padding=self.padding)
-        if self.use_bias:
-            y += self.b
-        y = self.activation(y)
-        return y
 #------------------------------------------------------------------------------------------------------------------------------#
 class UpSampalingConv2D(tf.keras.layers.Layer):
     def __init__(self,
@@ -296,76 +246,12 @@ class UpSampalingConv2D(tf.keras.layers.Layer):
         y = self.activation(y)
         return y
 #------------------------------------------------------------------------------------------------------------------------------#
-class SeparableConv2D(tf.keras.layers.Layer):
-    def __init__(self,
-                 filters=None,
-                 kernel_size=None,
-                 strides=None,
-                 padding=None,
-                 use_bias=False,
-                 kernel_initializer='glorot_uniform', 
-                 bias_initializer='zeros',
-                 activation=None,
-                 spectral_normalization=False,
-                 name=None,
-                 dtype=None,**kwargs):
-        """
-        深度可分离卷积
-        由深度卷积 1x1卷积组成
-        对深度卷积部分单独计算谱范数只是理论上可行 实践意义上 没有硬件 驱动与底层软件优化 所以不是并行计算 时间复杂度高
-        """
-        super(SeparableConv2D,self).__init__(name=name,dtype=dtype)
-        self.filters = filters#out put channels
-        self.kernel_size = kernel_size#[3,3]
-        if len(strides)!=2:
-            raise ValueError("2D conv need 2 dimensions for strides")
-        self.strides = [1]+strides+[1]
-        self.strides_depth_wise = [1]+strides+[1]
-        self.strides_point_wise = [1,1,1,1]
-        self.padding = padding.upper()
-        self.use_bias = use_bias
-        self.activation = activation_slect(activation)
-        self.kernel_initializer = initializer_slect(kernel_initializer)
-        self.bias_initializer = initializer_slect(bias_initializer)
-
-        if spectral_normalization:
-            self._Sn_depth_wise = Sn(dtype=dtype,**kwargs)
-            self._Sn_point_wise = Sn(dtype=dtype,**kwargs)
- 
-        self.spectral_normalization = spectral_normalization
-    def build(self,input_shape):
-        super(SeparableConv2D,self).build(input_shape=input_shape)
-        #padding 接入的预处理
-        if len(input_shape)!=4:
-            raise ValueError("2D conv need 4 dimensions for input_shape")
-        output_shape,padding,padding_vect = Reconstruction.ConvCalculation(input_shape=input_shape,
-                                                                           filters=self.filters,
-                                                                           kernel_size=self.kernel_size,
-                                                                           strides=self.strides[1:-1],
-                                                                           padding=self.padding)
-        self.padding = padding
-        self.padding_vect = padding_vect
-
-        depth = int(input_shape[-1])
-        self.depth_wise_w = self.add_weight('depth_wise_w',(self.kernel_size+[depth]+[1]),initializer=self.kernel_initializer,trainable=True)
-        self.w = self.add_weight('w',([1,1]+[input_shape[-1]]+[self.filters]),initializer=self.kernel_initializer,trainable=True)
-        if self.use_bias:
-            self.b = self.add_weight('b',(output_shape[-1]),initializer=self.bias_initializer,trainable=True)
-        else:
-            pass 
-        if self.spectral_normalization:
-            self._Sn_depth_wise.build(input_shape=self.depth_wise_w.shape,w=self.depth_wise_w)
-            self._Sn_point_wise.build(input_shape=self.w.shape,w=self.w)
-        output_shape = output_shape[:]
-        return output_shape
-    def call(self,x,training):
-        x = tf.pad(x,self.padding_vect,self.padding)
-        if self.spectral_normalization:
-            self._Sn_depth_wise(self.depth_wise_w,training)#适应计算类型
-            self._Sn_point_wise(self.w,training)#适应计算类型
-
-        y = tf.nn.separable_conv2d(input=x,depthwise_filter=self.depth_wise_w,pointwise_filter=self.w,strides=self.strides,padding="VALID")#接管padding方式后 用valid实现等效
-        if self.use_bias:
-            y += self.b
-        y = self.activation(y)
-        return y
+class SeparableConv2D(tf.keras.layers.SeparableConv2D):
+    """
+        Copy from the tf.keras.layers.SeparableConv2D
+        input:...see the reference
+        output:...see the reference
+        reference:https://tensorflow.google.cn/api_docs/python/tf/keras/layers/SeparableConv2D
+    """
+    def __init__(self,*args,**kwargs):
+        super(SeparableConv2D,self).__init__(*args,**kwargs)
