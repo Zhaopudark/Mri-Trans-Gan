@@ -11,7 +11,7 @@ from PIL import Image
 import tensorflow as tf
 import numpy as np 
 import io
-from collections import Iterable
+from collections.abc import Iterable
 import sys
 base = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(base, '../'))
