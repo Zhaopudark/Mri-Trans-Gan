@@ -35,7 +35,6 @@ class Conv7S1(tf.keras.Model):#c7s1_k
                               strides=[1,1,1],
                               padding="REFLECT",
                               use_bias=use_bias,
-                              spectral_normalization=spectral_normalization,
                               dtype=dtype,
                               **kwargs)
         self.l2_norm = InstanceNormalization(dtype=dtype)
@@ -71,7 +70,6 @@ class DownSampling(tf.keras.Model):#dk
                               strides=[1,2,2],
                               padding="REFLECT",
                               use_bias=use_bias,
-                              spectral_normalization=spectral_normalization,
                               dtype=dtype,
                               **kwargs)
         self.l2_norm = InstanceNormalization(dtype=dtype)
@@ -107,7 +105,6 @@ class ResBlock(tf.keras.Model):#rk
                              strides=[1,1,1],
                              padding="REFLECT",
                              use_bias=use_bias,
-                             spectral_normalization=spectral_normalization,
                              dtype=dtype,
                              **kwargs)
         self.l2_norm = InstanceNormalization(dtype=dtype)
@@ -117,7 +114,6 @@ class ResBlock(tf.keras.Model):#rk
                              strides=[1,1,1],
                              padding="REFLECT",
                              use_bias=use_bias,
-                             spectral_normalization=spectral_normalization,
                              dtype=dtype,
                              **kwargs)
         self.l5_norm = InstanceNormalization(dtype=dtype)
@@ -156,7 +152,6 @@ class ResBlocks(tf.keras.Model):#rks
         self.rs_list = []
         for _ in range(n):
             self.rs_list.append(ResBlock(filters=filters,
-                                         spectral_normalization=spectral_normalization,
                                          use_bias=use_bias,
                                          specific_out_dtype=specific_out_dtype,
                                          dtype=dtype,
@@ -191,7 +186,6 @@ class UpSampling(tf.keras.Model):#uk
                                            strides=[1,2,2],
                                            padding="SAME",
                                            use_bias=use_bias,
-                                           spectral_normalization=spectral_normalization,
                                            dtype=dtype,
                                            **kwargs)
         elif up_sampling_method == "sub_pixel_up":
@@ -201,7 +195,6 @@ class UpSampling(tf.keras.Model):#uk
                                           strides=[1,2,2],
                                           padding="SAME",
                                           use_bias=use_bias,
-                                          spectral_normalization=spectral_normalization,
                                           dtype=dtype,
                                           **kwargs)
         else:
@@ -244,7 +237,6 @@ class Conv4S2(tf.keras.Model):#ck
                              strides=[1,2,2],
                              padding='SAME',
                              use_bias=use_bias,
-                             spectral_normalization=spectral_normalization,
                              dtype=dtype,
                              **kwargs)
         if norm:
@@ -282,7 +274,6 @@ class Conv4S1(tf.keras.Model):#ck last
                                strides=[1,1,1],
                                padding='SAME',
                                use_bias=True,
-                               spectral_normalization=spectral_normalization,
                                dtype=dtype,
                                **kwargs)
         if use_sigmoid:

@@ -2,8 +2,10 @@
 import pytest
 import numpy as np
 import tensorflow as tf 
-from models._layers.convolutions import SpecificConvPad
-
+from models._layers.convolutions import ConvPadConcretization
+from models._layers.convolutions import UpSampalingConv1D
+from models._layers.convolutions import UpSampalingConv2D
+from models._layers.convolutions import UpSampalingConv3D
 def _assert_allclose_according_to_type(
     a,
     b,
@@ -45,7 +47,7 @@ def _assert_allclose_according_to_type(
 @pytest.mark.parametrize("stride",[1,2,3])
 @pytest.mark.parametrize("padding", ["same", "valid","causal"])
 @pytest.mark.parametrize("dilation_rate",[1,2,3])
-def test_specificconvpad_behavior_1d(input_shape,dtype,kernel_size,stride,padding,dilation_rate):
+def test_convpadconcretization_behavior_1d(input_shape,dtype,kernel_size,stride,padding,dilation_rate):
     if dilation_rate>1 and stride!=1:
         pass
     else:
@@ -62,7 +64,7 @@ def test_specificconvpad_behavior_1d(input_shape,dtype,kernel_size,stride,paddin
         tf.keras.utils.set_random_seed(1000)
         kernel_initializer = tf.keras.initializers.GlorotUniform(seed=1000)
         conv1d_ = tf.keras.layers.Conv1D(filters=8, kernel_size=[kernel_size,]*dim, strides=(stride,)*dim, padding=padding,dtype=dtype,dilation_rate=dilation_rate,use_bias=False,kernel_initializer=kernel_initializer)
-        conv1d_2 = SpecificConvPad(conv1d_,padding_mode="constant",padding_constant=0)
+        conv1d_2 = ConvPadConcretization(conv1d_,padding_mode="constant",padding_constant=0)
         y_ = conv1d_2(x)
 
         assert y.shape==y_.shape
@@ -75,7 +77,7 @@ def test_specificconvpad_behavior_1d(input_shape,dtype,kernel_size,stride,paddin
 @pytest.mark.parametrize("stride",[1,2,3])
 @pytest.mark.parametrize("padding", ["same", "valid"])
 @pytest.mark.parametrize("dilation_rate", [1,2,3])
-def test_specificconvpad_behavior_2d(input_shape,dtype,kernel_size,stride,padding,dilation_rate):
+def test_convpadconcretization_behavior_2d(input_shape,dtype,kernel_size,stride,padding,dilation_rate):
     if dilation_rate>1 and stride!=1:
         pass
     else:
@@ -92,7 +94,7 @@ def test_specificconvpad_behavior_2d(input_shape,dtype,kernel_size,stride,paddin
         tf.keras.utils.set_random_seed(1000)
         kernel_initializer = tf.keras.initializers.GlorotUniform(seed=1000)
         conv2d_ = tf.keras.layers.Conv2D(filters=8, kernel_size=[kernel_size,]*dim, strides=(stride,)*dim, padding=padding,dtype=dtype,dilation_rate=dilation_rate,use_bias=False,kernel_initializer=kernel_initializer)
-        conv2d_2 = SpecificConvPad(conv2d_,padding_mode="constant",padding_constant=0)
+        conv2d_2 = ConvPadConcretization(conv2d_,padding_mode="constant",padding_constant=0)
         y_ = conv2d_2(x)
 
         assert y.shape==y_.shape
@@ -105,7 +107,7 @@ def test_specificconvpad_behavior_2d(input_shape,dtype,kernel_size,stride,paddin
 @pytest.mark.parametrize("stride",[1,2,3])
 @pytest.mark.parametrize("padding", ["same", "valid"])
 @pytest.mark.parametrize("dilation_rate", [1,2,3])
-def test_specificconvpad_behavior_3d(input_shape,dtype,kernel_size,stride,padding,dilation_rate):
+def test_convpadconcretization_behavior_3d(input_shape,dtype,kernel_size,stride,padding,dilation_rate):
     if dilation_rate>1 and stride!=1:
         pass
     else:
@@ -122,7 +124,7 @@ def test_specificconvpad_behavior_3d(input_shape,dtype,kernel_size,stride,paddin
         tf.keras.utils.set_random_seed(1000)
         kernel_initializer = tf.keras.initializers.GlorotUniform(seed=1000)
         conv3d_ = tf.keras.layers.Conv3D(filters=8, kernel_size=[kernel_size,]*dim, strides=(stride,)*dim, padding=padding,dtype=dtype,dilation_rate=dilation_rate,use_bias=False,kernel_initializer=kernel_initializer)
-        conv3d_2 = SpecificConvPad(conv3d_,padding_mode="constant",padding_constant=0)
+        conv3d_2 = ConvPadConcretization(conv3d_,padding_mode="constant",padding_constant=0)
         y_ = conv3d_2(x)
 
         assert y.shape==y_.shape
@@ -139,7 +141,7 @@ def test_specificconvpad_behavior_3d(input_shape,dtype,kernel_size,stride,paddin
 @pytest.mark.parametrize("dilation_rate",[1,2,3])
 @pytest.mark.parametrize("padding_mode", ['constant', 'reflect', 'symmetric'])
 @pytest.mark.parametrize("padding_constant", [0,1,2,3])
-def test_specificconvpad_behavior_1d_with_padding_mode(input_shape,dtype,kernel_size,stride,padding,dilation_rate,padding_mode,padding_constant):
+def test_convpadconcretization_behavior_1d_with_padding_mode(input_shape,dtype,kernel_size,stride,padding,dilation_rate,padding_mode,padding_constant):
     if dilation_rate>1 and stride!=1:
         pass
     elif padding == "causal" and padding_mode!='constant':
@@ -158,9 +160,18 @@ def test_specificconvpad_behavior_1d_with_padding_mode(input_shape,dtype,kernel_
         tf.keras.utils.set_random_seed(1000)
         kernel_initializer = tf.keras.initializers.GlorotUniform(seed=1000)
         conv1d_ = tf.keras.layers.Conv1D(filters=8, kernel_size=[kernel_size,]*dim, strides=(stride,)*dim, padding=padding,dtype=dtype,dilation_rate=dilation_rate,use_bias=False,kernel_initializer=kernel_initializer)
-        conv1d_2 = SpecificConvPad(conv1d_,padding_mode=padding_mode,padding_constant=padding_constant)
+        conv1d_2 = ConvPadConcretization(conv1d_,padding_mode=padding_mode,padding_constant=padding_constant)
         y_ = conv1d_2(x)
         assert y.shape==y_.shape
+        config = conv1d_2.get_config()
+        tf.keras.utils.set_random_seed(1000)
+        conv1d_3 = ConvPadConcretization.from_config(config)
+        y__ = conv1d_3(x)
+        assert y.shape==y__.shape
+        computed = tf.reduce_mean(y__-y_)
+        _assert_allclose_according_to_type(computed,0.0)
+
+
 
 @pytest.mark.parametrize("input_shape", [31,32,33])
 @pytest.mark.parametrize("dtype", ["float32"])
@@ -170,7 +181,7 @@ def test_specificconvpad_behavior_1d_with_padding_mode(input_shape,dtype,kernel_
 @pytest.mark.parametrize("dilation_rate",[1,2,3])
 @pytest.mark.parametrize("padding_mode", ['constant', 'reflect', 'symmetric'])
 @pytest.mark.parametrize("padding_constant", [0,1,2,3])
-def test_specificconvpad_behavior_2d_with_padding_mode(input_shape,dtype,kernel_size,stride,padding,dilation_rate,padding_mode,padding_constant):
+def test_convpadconcretization_behavior_2d_with_padding_mode(input_shape,dtype,kernel_size,stride,padding,dilation_rate,padding_mode,padding_constant):
     if dilation_rate>1 and stride!=1:
         pass
     else:
@@ -187,9 +198,16 @@ def test_specificconvpad_behavior_2d_with_padding_mode(input_shape,dtype,kernel_
         tf.keras.utils.set_random_seed(1000)
         kernel_initializer = tf.keras.initializers.GlorotUniform(seed=1000)
         conv2d_ = tf.keras.layers.Conv2D(filters=8, kernel_size=[kernel_size,]*dim, strides=(stride,)*dim, padding=padding,dtype=dtype,dilation_rate=dilation_rate,use_bias=False,kernel_initializer=kernel_initializer)
-        conv2d_2 = SpecificConvPad(conv2d_,padding_mode=padding_mode,padding_constant=padding_constant)
+        conv2d_2 = ConvPadConcretization(conv2d_,padding_mode=padding_mode,padding_constant=padding_constant)
         y_ = conv2d_2(x)
         assert y.shape==y_.shape
+        config = conv2d_2.get_config()
+        tf.keras.utils.set_random_seed(1000)
+        conv2d_3 = ConvPadConcretization.from_config(config)
+        y__ = conv2d_3(x)
+        assert y.shape==y__.shape
+        computed = tf.reduce_mean(y__-y_)
+        _assert_allclose_according_to_type(computed,0.0)
 
 
 @pytest.mark.parametrize("input_shape", [31,32,33])
@@ -200,7 +218,7 @@ def test_specificconvpad_behavior_2d_with_padding_mode(input_shape,dtype,kernel_
 @pytest.mark.parametrize("dilation_rate",[1,2,3])
 @pytest.mark.parametrize("padding_mode", ['constant', 'reflect', 'symmetric'])
 @pytest.mark.parametrize("padding_constant", [0,1,2,3])
-def test_specificconvpad_behavior_3d_with_padding_mode(input_shape,dtype,kernel_size,stride,padding,dilation_rate,padding_mode,padding_constant):
+def test_convpadconcretization_behavior_3d_with_padding_mode(input_shape,dtype,kernel_size,stride,padding,dilation_rate,padding_mode,padding_constant):
     if dilation_rate>1 and stride!=1:
         pass
     else:
@@ -217,6 +235,103 @@ def test_specificconvpad_behavior_3d_with_padding_mode(input_shape,dtype,kernel_
         tf.keras.utils.set_random_seed(1000)
         kernel_initializer = tf.keras.initializers.GlorotUniform(seed=1000)
         conv3d_ = tf.keras.layers.Conv3D(filters=8, kernel_size=[kernel_size,]*dim, strides=(stride,)*dim, padding=padding,dtype=dtype,dilation_rate=dilation_rate,use_bias=False,kernel_initializer=kernel_initializer)
-        conv3d_2 = SpecificConvPad(conv3d_,padding_mode=padding_mode,padding_constant=padding_constant)
+        conv3d_2 = ConvPadConcretization(conv3d_,padding_mode=padding_mode,padding_constant=padding_constant)
         y_ = conv3d_2(x)
         assert y.shape==y_.shape
+        config = conv3d_2.get_config()
+        tf.keras.utils.set_random_seed(1000)
+        conv3d_3 = ConvPadConcretization.from_config(config)
+        y__ = conv3d_3(x)
+        assert y.shape==y__.shape
+        computed = tf.reduce_mean(y__-y_)
+        _assert_allclose_according_to_type(computed,0.0)
+
+@pytest.mark.parametrize("input_shape", [31,32,33])
+@pytest.mark.parametrize("dtype", ["float32"])
+@pytest.mark.parametrize("kernel_size",[1,2,3])
+@pytest.mark.parametrize("size",[1,2,3])
+@pytest.mark.parametrize("interpolation",["nearest","bilinear"])
+@pytest.mark.parametrize("stride",[1])
+@pytest.mark.parametrize("dilation_rate",[1,2,3])
+def test_upsampling_conv_1d(input_shape,dtype,kernel_size,size,interpolation,stride,dilation_rate):
+    
+    dim = 1
+    if dim!=2 and interpolation!="nearest":
+        pass
+    else:
+        input_shape = [8]+[input_shape,]*dim+[3]
+        tf.keras.utils.set_random_seed(1000)
+        x = tf.random.normal(shape=input_shape,seed=1000,dtype=dtype)
+
+        tf.keras.utils.set_random_seed(1000)
+        kernel_initializer = tf.keras.initializers.GlorotUniform(seed=1000)
+        upc = UpSampalingConv1D(filters=8, kernel_size=[kernel_size,]*dim, strides=(stride,)*dim,size=(size,)*dim,interpolation=interpolation, padding="same",dtype=dtype,dilation_rate=dilation_rate,kernel_initializer=kernel_initializer)
+        y = upc(x)
+        assert int(y.shape[1])==int(x.shape[1])*size
+        config = upc.get_config()
+        upc_ = UpSampalingConv1D.from_config(config)
+        tf.keras.utils.set_random_seed(1000)
+        y_ = upc_(x)
+        assert y.shape==y_.shape
+        computed = tf.reduce_mean(y-y_)
+        _assert_allclose_according_to_type(computed,0.0)
+
+@pytest.mark.parametrize("input_shape", [31,32,33])
+@pytest.mark.parametrize("dtype", ["float32"])
+@pytest.mark.parametrize("kernel_size",[1,2,3])
+@pytest.mark.parametrize("size",[1,2,3])
+@pytest.mark.parametrize("interpolation",["nearest","bilinear"])
+@pytest.mark.parametrize("stride",[1])
+@pytest.mark.parametrize("dilation_rate",[1,2])
+def test_upsampling_conv_2d(input_shape,dtype,kernel_size,size,interpolation,stride,dilation_rate):
+    
+    dim = 2
+    if dim!=2 and interpolation!="nearest":
+        pass
+    else:
+        input_shape = [8]+[input_shape,]*dim+[3]
+        tf.keras.utils.set_random_seed(1000)
+        x = tf.random.normal(shape=input_shape,seed=1000,dtype=dtype)
+
+        tf.keras.utils.set_random_seed(1000)
+        kernel_initializer = tf.keras.initializers.GlorotUniform(seed=1000)
+        upc = UpSampalingConv2D(filters=8, kernel_size=[kernel_size,]*dim, strides=(stride,)*dim,size=(size,)*dim,interpolation=interpolation, padding="same",dtype=dtype,dilation_rate=dilation_rate,kernel_initializer=kernel_initializer)
+        y = upc(x)
+        assert int(y.shape[1])==int(x.shape[1])*size
+        config = upc.get_config()
+        upc_ = UpSampalingConv2D.from_config(config)
+        tf.keras.utils.set_random_seed(1000)
+        y_ = upc_(x)
+        assert y.shape==y_.shape
+        computed = tf.reduce_mean(y-y_)
+        _assert_allclose_according_to_type(computed,0.0)
+    
+@pytest.mark.parametrize("input_shape", [31,32,33])
+@pytest.mark.parametrize("dtype", ["float32"])
+@pytest.mark.parametrize("kernel_size",[1,2,3])
+@pytest.mark.parametrize("size",[1,2,3])
+@pytest.mark.parametrize("interpolation",["nearest","bilinear"])
+@pytest.mark.parametrize("stride",[1])
+@pytest.mark.parametrize("dilation_rate",[1,2])
+def test_upsampling_conv_3d(input_shape,dtype,kernel_size,size,interpolation,stride,dilation_rate):
+    
+    dim = 3
+    if dim!=2 and interpolation!="nearest":
+        pass
+    else:
+        input_shape = [8]+[input_shape,]*dim+[3]
+        tf.keras.utils.set_random_seed(1000)
+        x = tf.random.normal(shape=input_shape,seed=1000,dtype=dtype)
+
+        tf.keras.utils.set_random_seed(1000)
+        kernel_initializer = tf.keras.initializers.GlorotUniform(seed=1000)
+        upc = UpSampalingConv3D(filters=8, kernel_size=[kernel_size,]*dim, strides=(stride,)*dim,size=(size,)*dim,interpolation=interpolation, padding="same",dtype=dtype,dilation_rate=dilation_rate,kernel_initializer=kernel_initializer)
+        y = upc(x)
+        assert int(y.shape[1])==int(x.shape[1])*size
+        config = upc.get_config()
+        upc_ = UpSampalingConv3D.from_config(config)
+        tf.keras.utils.set_random_seed(1000)
+        y_ = upc_(x)
+        assert y.shape==y_.shape
+        computed = tf.reduce_mean(y-y_)
+        _assert_allclose_according_to_type(computed,0.0)

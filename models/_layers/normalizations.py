@@ -188,8 +188,8 @@ class GroupNormalization(tf.keras.layers.Layer):
         }
         base_config = super().get_config()
         return {**base_config, **config}
-    def compute_output_shape(self, input_shape):
-        return input_shape
+    # def compute_output_shape(self, input_shape):
+    #     return input_shape
     def _reshape_into_groups(self, inputs, input_shape, tensor_input_shape):
         group_shape = [tensor_input_shape[i] for i in range(len(input_shape))]
         is_instance_norm = (input_shape[self.axis] // self.groups) == 1
@@ -558,35 +558,9 @@ if __name__=="__main__":
         seed = 0x2020
         np.random.seed(seed)
         tf.random.set_seed(seed)
-    import tensorflow_addons as tfa
-    for policy in policy_list:
-        # GN1 = tfa.layers.GroupNormalization(axis=-1,dtype=policy)
-        GN1 = tf.keras.layers.LayerNormalization(axis=-1,dtype=policy)
-        GN1.build(input_shape=[5, 20, 30, 128])
-        GN2 = tfa.layers.GroupNormalization(axis=-1,groups=1,dtype=policy)
-        GN2.build(input_shape=[5, 20, 30, 128])
-        GN3 = GroupNormalization(axis=-1,groups=1,dtype=policy)
-        GN3.build(input_shape=[5, 20, 30, 128])
-        for _ in range(10):
-            if isinstance(policy,tf.keras.mixed_precision.Policy):
-                set_random_seed()
-                x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float16,mean=5.0,stddev=10.0)
-            else:
-                set_random_seed()
-                x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float32,mean=5.0,stddev=10.0)
-            y = tf.reduce_mean(GN1(x,training=True)-GN2(x,training=True))
-            print(y)
-        print("***************************")
-        for _ in range(10):
-            if isinstance(policy,tf.keras.mixed_precision.Policy):
-                set_random_seed()
-                x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float16,mean=5.0,stddev=10.0)
-            else:
-                set_random_seed()
-                x = tf.random.normal(shape=[5, 20, 30, 128],dtype=tf.float32,mean=5.0,stddev=10.0)
-            y = tf.reduce_mean(GN1(x,training=True)-GN3(x,training=True))
-            print(y)
-        print("----------------------------------")
+    insn = InstanceNormalization()
+    insn.build(input_shape=[1,2,3,4])
+    print(insn.trainable_variables)
 
 
     # set_random_seed()

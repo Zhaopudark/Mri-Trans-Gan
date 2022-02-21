@@ -268,21 +268,21 @@ ANCHOR 问题6 反卷积过程中的padding是否可等价?如何进行等价
     一般的 将输入输出都扁平化为一个向量 则任意的卷积 都可以等效为一个矩阵乘法
     for example
     consider a 1-D conv with input X=[x1,x2,x3,x4,x5], kernel=[w1,w2,w3], stride = 1, padding='VALID',so 
-        W = [[  w1,0 ,0 ,
-                w2,w1,0 ,
-                w3,w2,w1,
-                0 ,w3,w2,
-                0 ,0 ,w3,]] #r5x3
-        X = [x1,x2,x3,x4,x5] #r1x5 do not pad since  padding='VALID'
-        Y = X@W = [x1w1+x2w2+x3w3,x2w1+x3w2+x4w3,x3w1+x4w2+x5w3] #r1x3
+        W = [[w1,0 ,0 ,],
+             [w2,w1,0 ,],
+             [w3,w2,w1,],
+             [0 ,w3,w2,],
+             [0 ,0 ,w3,]] #r5x3
+        X = [[x1,x2,x3,x4,x5]] #r1x5 do not pad since  padding='VALID'
+        Y = X@W = [[x1w1+x2w2+x3w3,x2w1+x3w2+x4w3,x3w1+x4w2+x5w3]] #r1x3
     consider a 1-D conv with input X=[x1,x2,x3], kernel=[w1,w2,w3], stride = 1, padding='same',so 
-        W = [[  w1,0 ,0 ,
-                w2,w1,0 ,
-                w3,w2,w1,
-                0 ,w3,w2,
-                0 ,0 ,w3,]] #r5x3
-        X = [0,x1,x2,x3,0] #r1x5 pad since padding='same'
-        Y = X@W = [x1w2+x2w3,x1w1+x2w2+x3w3,x2w1+x3w2] #r1x3
+        W = [[w1,0 ,0 ,],
+             [w2,w1,0 ,],
+             [w3,w2,w1,],
+             [0 ,w3,w2,],
+             [0 ,0 ,w3,]] #r5x3
+        X = [[0,x1,x2,x3,0]] #r1x5 pad since padding='same'
+        Y = X@W = [[x1w2+x2w3,x1w1+x2w2+x3w3,x2w1+x3w2]] #r1x3
     而一个反卷积 就可以视为 反转卷积的输入输出尺度 并将卷积的卷积核稀疏矩阵转置后的矩阵乘法
     由问题5可知 
     deconv(·)必须确定output_length 而确定output_length的方法与结果是不唯一的
@@ -291,11 +291,11 @@ ANCHOR 问题6 反卷积过程中的padding是否可等价?如何进行等价
     for example if output_padding=0
     consider a 1-D deconv with input X=[x1,x2,x3], kernel=[w1,w2,w3], stride = 1, padding='VALID',so 
         consider 
-        NMW.T = [[   w1,w2,w3, 0, 0,...
-                     0,w1,w2,w3, 0,...
-                     0, 0,w1,w2,w3,...
-                     ...,
-                     ...,   ]] #rMxN
+        NMW.T = [[w1,w2,w3, 0, 0,...],
+                 [0 ,w1,w2,w3, 0,...],
+                 [0 ,0 ,w1,w2,w3,...],
+                 ...,
+                 ...,] #rMxN
         since input X is 3-D tensor
         from output_padding=0
             get output_length = (3 - 1) * 1 + 3 = 5
@@ -303,19 +303,19 @@ ANCHOR 问题6 反卷积过程中的padding是否可等价?如何进行等价
             pad_left = 0
             pad_right = 0
         grab r3x5 matrix from NMW.T
-        W.T = [[    w1,w2,w3, 0, 0,
-                    0 ,w1,w2,w3, 0,
-                    0 , 0,w1,w2,w3,]] #r3x5
-        X = [x1,x2,x3] #r1x3 deconv never pad inputs 
-        temp_output = Y_ = X@W.T = [x1w1,x1w2+x2w1,x1w3+x2w2+x3w1,x2w3+x3w2,x3w3] # r1x5
-        Y  = slice(Y_,pad_left,pad_right) = [x1w1,x1w2+x2w1,x1w3+x2w2+x3w1,x2w3+x3w2,x3w3]  # r1x5
+        W.T = [[w1,w2,w3, 0, 0,],
+               [0 ,w1,w2,w3, 0,],
+               [0 , 0,w1,w2,w3,]] #r3x5
+        X = [[x1,x2,x3]] #r1x3 deconv never pad inputs 
+        temp_output = Y_ = X@W.T = [[x1w1,x1w2+x2w1,x1w3+x2w2+x3w1,x2w3+x3w2,x3w3]] # r1x5
+        Y  = slice(Y_,pad_left,pad_right) = [[x1w1,x1w2+x2w1,x1w3+x2w2+x3w1,x2w3+x3w2,x3w3]]  # r1x5
     consider a 1-D deconv with input X=[x1,x2,x3], kernel=[w1,w2,w3], stride = 1, padding='same',so
         consider 
-        NMW.T = [[   w1,w2,w3, 0, 0,...
-                     0,w1,w2,w3, 0,...
-                     0, 0,w1,w2,w3,...
-                     ...,
-                     ...,   ]] #rMxN
+        NMW.T = [[w1,w2,w3, 0, 0,...],
+                 [0 ,w1,w2,w3, 0,...],
+                 [0 , 0,w1,w2,w3,...],
+                 ...,
+                 ...,] #rMxN
         since input X is 3-D tensor
         from output_padding=0
             get output_length = 3*1 = 3
@@ -323,11 +323,11 @@ ANCHOR 问题6 反卷积过程中的padding是否可等价?如何进行等价
             pad_left = 3//2
             pad_right = 3-3//2 -1
         grab r3x5 matrix from NMW.T
-        W.T = [[    w1,w2,w3, 0, 0,
-                     0,w1,w2,w3, 0,
-                     0, 0,w1,w2,w3,]] #r3x5 
-        temp_output = Y_ =  X@W.T = [w1,x1w2+x2w1,x1w3+x2w2+x3w1,x2w3+x3w2,w3] # r1x5
-        Y  = slice(Y_,pad_left,pad_right) = [x1w2+x2w1,x1w3+x2w2+x3w1,x2w3+x3w2] # r1x3
+        W.T = [[w1,w2,w3, 0, 0,],
+               [ 0,w1,w2,w3, 0,],
+               [ 0, 0,w1,w2,w3,]] #r3x5 
+        temp_output = Y_ =  X@W.T = [[w1,x1w2+x2w1,x1w3+x2w2+x3w1,x2w3+x3w2,w3]] # r1x5
+        Y  = slice(Y_,pad_left,pad_right) = [[x1w2+x2w1,x1w3+x2w2+x3w1,x2w3+x3w2]] # r1x3
         NOTE In above case, W.T was sliced to calculated with X for correct output Y(correct output_length and correct value). 
         Actully, specific deconv op is determined by c++ ops, such as 'Conv2DBackpropInput', 'Conv3DBackpropInput', etc.
         This case is not the only explanation. Another explanation is to slice Y for correct output. 
@@ -350,39 +350,39 @@ import tensorflow as tf
 from functools import wraps
 from typeguard import typechecked
 from typing import Tuple,Iterable,Union,List
-def typeguard_for_conv_helper(func):
-    def _arg_trans(input_arg):
-        """
-        specify for conv helper
-        trans input_shape,filter,kernel_size to int 
-        trans padding to str in lowercase
-        """
-        if isinstance(input_arg,list) or isinstance(input_arg,tuple) or isinstance(input_arg,tf.TensorShape):
-            if len(input_arg)>1 or len(input_arg)<=0:
-                raise ValueError("input arg must be 1-dim, not {}".format(input_arg))
-            else:
-                if hasattr(input_arg,"as_list"):
-                    out_put = input_arg.as_list()[0]
-                else:
-                    out_put =  input_arg[0]
-            if out_put is None: # To avoid None in [None,shape1,shape2]
-                raise ValueError("input_arg[0] must be a element but not a None")
-            else:
-                return int(out_put)
-        elif isinstance(input_arg,int) or isinstance(input_arg,float) or isinstance(input_arg,tf.Tensor):
-            return  int(input_arg)
-        elif isinstance(input_arg,str):
-            return  input_arg.lower()
-        else:
-            raise ValueError("input_arg must be a list, tuple, TensorShape, int, float or Tensor")
-    @wraps(func)
-    def wrappered(*args,**kwargs):
-        args = list(map(_arg_trans,args))
-        for key,value in kwargs.items():
-            kwargs[key] = _arg_trans(value)
-        _output = func(*args,**kwargs)
-        return _output
-    return wrappered
+# def typeguard_for_conv_helper(func):
+#     def _arg_trans(input_arg):
+#         """
+#         specify for conv helper
+#         trans input_shape,filter,kernel_size to int 
+#         trans padding to str in lowercase
+#         """
+#         if isinstance(input_arg,list) or isinstance(input_arg,tuple) or isinstance(input_arg,tf.TensorShape):
+#             if len(input_arg)>1 or len(input_arg)<=0:
+#                 raise ValueError("input arg must be 1-dim, not {}.".format(input_arg))
+#             else:
+#                 if hasattr(input_arg,"as_list"):
+#                     out_put = input_arg.as_list()[0]
+#                 else:
+#                     out_put =  input_arg[0]
+#             if out_put is None: # To avoid None in [None,shape1,shape2]
+#                 raise ValueError("input_arg[0] must be a element but not a None")
+#             else:
+#                 return int(out_put)
+#         elif isinstance(input_arg,int) or isinstance(input_arg,float) or isinstance(input_arg,tf.Tensor):
+#             return  int(input_arg)
+#         elif isinstance(input_arg,str):
+#             return  input_arg.lower()
+#         else:
+#             raise ValueError("input_arg must be a list, tuple, TensorShape, int, float or Tensor")
+#     @wraps(func)
+#     def wrappered(*args,**kwargs):
+#         args = list(map(_arg_trans,args))
+#         for key,value in kwargs.items():
+#             kwargs[key] = _arg_trans(value)
+#         _output = func(*args,**kwargs)
+#         return _output
+#     return wrappered
 
 @typechecked
 def get_conv_paddings(input_length:int,filter_size:int,stride:int,dilation_rate:int,padding:str):
@@ -434,34 +434,7 @@ def get_conv_paddings(input_length:int,filter_size:int,stride:int,dilation_rate:
         raise ValueError("Padding should in 'valid', 'causal', 'same' or 'full', not {}.",format)
     return [pad_left,pad_right]
 
-@typechecked
-def get_padded_length_from_paddings(length:Union[int,None],paddings:Tuple[int,int]):
-    if length is not None:
-        pad_left,pad_right = paddings
-        length = length + pad_left + pad_right
-    return length
-@typechecked
-def norm_paddings_by_data_format(data_format:str,paddings:Iterable):
-    out_buf = []
-    for data_format_per_dim in data_format:
-        if data_format_per_dim.upper() in ["N","C"]:
-            out_buf.append(tuple([0,0]))
-        elif data_format_per_dim.upper() in ["D","H","W"]:
-            out_buf.append(tuple(next(paddings)))
-        else:
-            raise ValueError("data_format should consist with 'N', 'C', 'D', 'H' or 'W' but not '{}'.".format(out_buf))
-    return out_buf
-@typechecked
-def grab_length_by_data_format(data_format:str,length:Union[Tuple,List]):
-    out_buf = []
-    for data_format_per_dim,length_per_dim in zip(data_format,length):
-        if data_format_per_dim.upper() in ["N","C"]:
-            pass
-        elif data_format_per_dim.upper() in ["D","H","W"]:
-            out_buf.append(int(length_per_dim))
-        else:
-            raise ValueError("data_format should consist with 'N', 'C', 'D', 'H' or 'W' but not '{}'.".format(out_buf))
-    return out_buf
+
 
 @typechecked
 def conv_output_length(input_length:int,filter_size:int,padding:str,stride:int,dilation:int=1):
@@ -678,7 +651,7 @@ def conv_input_length(output_length:int,filter_size:int,padding:str,stride:int):
     input_length = (output_length-1)*stride-left_pad-right_pad+filter_size
     Args:
         output_length: integer.
-        filter_size: integer.
+        filter_size: integer. means dilated_filter_size
         padding: one of "same", "valid", "full".
         stride: integer.
     Returns:
@@ -696,13 +669,13 @@ def conv_input_length(output_length:int,filter_size:int,padding:str,stride:int):
         pad_left = filter_size - 1
         pad_right = 0
     else:
-        raise ValueError("padding must be one of 'same','valid','full','causal', not {}".format(padding))
+        raise ValueError("padding must be one of 'same','valid','full','causal', not {}.".format(padding))
     return (output_length - 1) * stride - pad_left - pad_right + filter_size
-    
+
 @typechecked 
 def deconv_output_length(input_length:int,
                          filter_size:int,
-                         padding:int,
+                         padding:str,
                          output_padding:Union[int,None],
                          stride:int,
                          dilation:int=1):
@@ -786,7 +759,7 @@ def deconv_output_length(input_length:int,
     Args:
         input_length: Integer.
         filter_size: Integer.
-        padding: one of `"same"`, `"valid"`, `"full"`.
+        padding: one of `same`, `valid`, `full`, `causal`.
         output_padding: Integer, amount of padding along the output dimension. Can
             be set to `None` in which case the output length is inferred.
         stride: Integer.
@@ -796,20 +769,115 @@ def deconv_output_length(input_length:int,
     """
     _conv_output_length = input_length
     # Get the dilated kernel size
-    filter_size = filter_size + (filter_size - 1) * (dilation - 1)
+    dilated_filter_size = filter_size + (filter_size - 1) * (dilation - 1)
     # Infer length if output padding is None, else compute the exact length
     if output_padding is None:
         if padding == 'valid':
-            _conv_input_length = _conv_output_length * stride + max(filter_size - stride, 0)
+            _conv_input_length = _conv_output_length * stride + max(dilated_filter_size - stride, 0)
         elif padding == 'full':
-            _conv_input_length = _conv_output_length * stride - (stride + filter_size - 2)
+            _conv_input_length = _conv_output_length * stride - (stride + dilated_filter_size - 2)
         elif padding == 'causal':
             _conv_input_length = _conv_output_length * stride
         elif padding == 'same':
             _conv_input_length = _conv_output_length * stride
         else:
-            raise ValueError("padding must be one of 'same','valid','full','causal', not {}".format(padding))
+            raise ValueError("padding must be one of 'same','valid','full','causal', not {}.".format(padding))
     else:
-        _conv_input_length = conv_input_length(output_length=_conv_output_length,filter_size=filter_size,padding=padding,stride=stride)
+        _conv_input_length = conv_input_length(output_length=_conv_output_length,filter_size=dilated_filter_size,padding=padding,stride=stride)
         _conv_input_length += output_padding
     return _conv_input_length
+
+@typechecked
+def get_padded_length_from_paddings(length:Union[int,None],paddings:Tuple[int,int]):
+    if length is not None:
+        pad_left,pad_right = paddings
+        length = length + pad_left + pad_right
+    return length
+@typechecked
+def normalize_paddings_by_data_format(data_format:str,paddings:Iterable):
+    out_buf = []
+    for data_format_per_dim in data_format:
+        if data_format_per_dim.upper() in ["N","C"]:
+            out_buf.append(tuple([0,0]))
+        elif data_format_per_dim.upper() in ["D","H","W"]:
+            out_buf.append(tuple(next(paddings)))
+        else:
+            raise ValueError("data_format should consist with 'N', 'C', 'D', 'H' or 'W' but not '{}'.".format(out_buf))
+    return out_buf
+@typechecked
+def grab_length_by_data_format(data_format:str,length:Union[Tuple,List]):
+    out_buf = []
+    for data_format_per_dim,length_per_dim in zip(data_format,length):
+        if data_format_per_dim.upper() in ["N","C"]:
+            pass
+        elif data_format_per_dim.upper() in ["D","H","W"]:
+            out_buf.append(int(length_per_dim))
+        else:
+            raise ValueError("data_format should consist with 'N', 'C', 'D', 'H' or 'W' but not '{}'.".format(out_buf))
+    return out_buf
+def normalize_padding(value):
+    if isinstance(value, (list, tuple)):
+        return value
+    padding = value.lower()
+    if padding not in {'valid', 'same', 'causal','full'}:
+        raise ValueError('The `padding` argument must be a list/tuple or one of '
+                        '"valid", "same", "full" (or "causal", only for `Conv1D). '
+                        f'Received: {padding}')
+    return padding
+def normalize_specific_padding_mode(value):
+    if isinstance(value, (list, tuple)):
+        return value
+    padding = value.lower()
+    if padding not in {'constant', 'reflect', 'symmetric'}:
+        raise ValueError('The `padding` argument must be a list/tuple or one of '
+                        '"constant", "reflect" or "symmetric"). '
+                        f'Received: {padding}')
+    return padding.upper()
+def normalize_tuple(value, n, name, allow_zero=False):
+    """Transforms non-negative/positive integer/integers into an integer tuple.
+    Args:
+        value: The value to validate and convert. Could an int, or any iterable of
+        ints.
+        n: The size of the tuple to be returned.
+        name: The name of the argument being validated, e.g. "strides" or
+        "kernel_size". This is only used to format error messages.
+        allow_zero: Default to False. A ValueError will raised if zero is received
+        and this param is False.
+    Returns:
+        A tuple of n integers.
+    Raises:
+        ValueError: If something else than an int/long or iterable thereof or a
+        negative value is
+        passed.
+    """
+    error_msg = (f'The `{name}` argument must be a tuple of {n} '
+                f'integers. Received: {value}')
+
+    if isinstance(value, int):
+        value_tuple = (value,) * n
+    else:
+        try:
+            value_tuple = tuple(value)
+        except TypeError:
+            raise ValueError(error_msg)
+        if len(value_tuple) != n:
+            raise ValueError(error_msg)
+        for single_value in value_tuple:
+            try:
+                int(single_value)
+            except (ValueError, TypeError):
+                error_msg += (f'including element {single_value} of '
+                            f'type {type(single_value)}')
+                raise ValueError(error_msg)
+    if allow_zero:
+        unqualified_values = {v for v in value_tuple if v < 0}
+        req_msg = '>= 0'
+    else:
+        unqualified_values = {v for v in value_tuple if v <= 0}
+        req_msg = '> 0'
+    if unqualified_values:
+        error_msg += (f' including {unqualified_values}'
+                    f' that does not satisfy the requirement `{req_msg}`.')
+        raise ValueError(error_msg)
+
+    return value_tuple
