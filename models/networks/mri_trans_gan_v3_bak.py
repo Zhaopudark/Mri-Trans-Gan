@@ -55,7 +55,7 @@ class Generator(tf.keras.Model):
             self.block_list.append(mri_trans_gan_3d.ResBlocks(filters=capacity_vector*4+capacity_vector*4//8,n=res_blocks_num,dtype=dtype))
             self.block_list.append(mri_trans_gan_3d.UpSampling(filters=capacity_vector*2,dtype=dtype,up_sampling_method=up_sampling_method))
             self.block_list.append(mri_trans_gan_3d.UpSampling(filters=capacity_vector,dtype=dtype,up_sampling_method=up_sampling_method))
-            tmp_policy = tf.keras.mixed_precision.Policy('mixed_float16')
+            tmp_policy = tf.keras.mixed_precision.Policy('float32')
             self.block_list.append(mri_trans_gan_3d.Conv7S1(filters=1,activation=last_activation_name,dtype=dtype,specific_out_dtype=tmp_policy,output_domain=output_domain))
         elif dimensions_type == "3D_special":
             self.block_list = []

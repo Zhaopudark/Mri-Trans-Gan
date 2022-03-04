@@ -6,7 +6,6 @@ base = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(base)
 sys.path.append(os.path.join(base,'../'))
 from blocks import mri_trans_gan_2d,mri_trans_gan_3d_special 
-# from blocks import mri_trans_gan_3d_bak as mri_trans_gan_3d 
 from blocks import mri_trans_gan_3d
 from _gan_helper import GeneratorHelper,DiscriminatorHelper
 """
@@ -56,7 +55,7 @@ class Generator(tf.keras.Model):
             self.block_list.append(mri_trans_gan_3d.ResBlocks(filters=capacity_vector*4+capacity_vector*4//8,n=res_blocks_num,dtype=dtype))
             self.block_list.append(mri_trans_gan_3d.UpSampling(filters=capacity_vector*2,dtype=dtype,up_sampling_method=up_sampling_method))
             self.block_list.append(mri_trans_gan_3d.UpSampling(filters=capacity_vector,dtype=dtype,up_sampling_method=up_sampling_method))
-            tmp_policy = tf.keras.mixed_precision.Policy('mixed_float16')
+            tmp_policy = tf.keras.mixed_precision.Policy('float32')
             self.block_list.append(mri_trans_gan_3d.Conv7S1(filters=1,activation=last_activation_name,dtype=dtype,specific_out_dtype=tmp_policy,output_domain=output_domain))
         elif dimensions_type == "3D_special":
             self.block_list = []
@@ -213,43 +212,43 @@ class Discriminator(tf.keras.Model):
         else:
             return y
 
-# if __name__ == "__main__":
-#     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
-#     tf.config.experimental.set_memory_growth(physical_devices[0], True)
-#     tf.config.experimental.enable_op_determinism()
-#     tf.keras.utils.set_random_seed(1000)
-#     x = tf.random.normal(shape=[1,16,128,128,1])
-#     x_m = tf.random.normal(shape=[1,16,240,240,1])
-#     m = tf.random.normal(shape=[1,16,128,128,1])
-#     class tmp_args():
-#         def __init__(self) -> None:
-#             pass
-#     args = tmp_args()
-#     args.capacity_vector = 32
-#     args.up_sampling_method = "up_conv"
-#     args.res_blocks_num = 9
-#     args.self_attention_G = None
-#     args.dimensions_type = "3D"
-#     args.self_attention_D = None
-#     args.spectral_normalization = False
-#     args.sn_iter_k = 1
-#     args.sn_clip_flag = True
-#     args.sn_clip_range = 128.0
-#     args.domain = [0.0,1.0]
-#     args.gan_loss_name = "WGAN-GP"
-#     policy = tf.keras.mixed_precision.Policy('mixed_float16')
-#     g = Generator(args,dtype=policy)
-#     d = Discriminator(args,dtype=policy)
-#     g.build(input_shape=[1,16,128,128,1])
-#     d.build(input_shape=[1,16,128,128,1])
-#     print(len(g.trainable_variables))
-#     for item in g.trainable_variables:
-#         print(tf.reduce_mean(item))
-#     input_ = [x,x_m,m]
-#     y = g(input_)
-#     print(y.shape,y.dtype)
-#     print(tf.reduce_mean(y))
-#     # y = d(input_)
-#     # print(y.shape,y.dtype)
-#     # print(tf.reduce_mean(y))
+if __name__ == "__main__":
+    physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+    tf.config.experimental.enable_op_determinism()
+    tf.keras.utils.set_random_seed(1000)
+    x = tf.random.normal(shape=[1,16,128,128,1])
+    x_m = tf.random.normal(shape=[1,16,240,240,1])
+    m = tf.random.normal(shape=[1,16,128,128,1])
+    class tmp_args():
+        def __init__(self) -> None:
+            pass
+    args = tmp_args()
+    args.capacity_vector = 32
+    args.up_sampling_method = "up_conv"
+    args.res_blocks_num = 9
+    args.self_attention_G = None
+    args.dimensions_type = "3D"
+    args.self_attention_D = None
+    args.spectral_normalization = False
+    args.sn_iter_k = 1
+    args.sn_clip_flag = True
+    args.sn_clip_range = 128.0
+    args.domain = [0.0,1.0]
+    args.gan_loss_name = "WGAN-GP"
+    policy = tf.keras.mixed_precision.Policy('mixed_float16')
+    g = Generator(args,dtype=policy)
+    d = Discriminator(args,dtype=policy)
+    g.build(input_shape=[1,16,128,128,1])
+    d.build(input_shape=[1,16,128,128,1])
+    print(len(g.trainable_variables))
+    for item in g.trainable_variables:
+        print(tf.reduce_mean(item))
+    input_ = [x,x_m,m]
+    y = g(input_)
+    print(y.shape,y.dtype)
+    print(tf.reduce_mean(y))
+    y = d(input_)
+    print(y.shape,y.dtype)
+    print(tf.reduce_mean(y))
 

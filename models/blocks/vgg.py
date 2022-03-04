@@ -11,145 +11,29 @@ sys.path.append(os.path.join(base,'../'))
 from craft.convolutions.conv2d import Conv2DVgg
 from craft.convolutions.conv3d import Vgg2Conv3D
 from craft.denses import DenseVgg
-class Vgg16(tf.keras.Model):
-    def __init__(self,path="D:\\Datasets\\VGG\\vgg16.npy",
-                 name=None,
-                 dtype=None):
-        self.path = path 
-        self.data_dict = np.load(self.path,encoding='latin1',allow_pickle=True).item()
-        super(Vgg16,self).__init__(name=name,dtype=dtype)
-        self.conv1_1 = Conv2DVgg(filters=64,kernel_size=[3,3],strides=[1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.conv1_2 = Conv2DVgg(filters=64,kernel_size=[3,3],strides=[1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.l1_max_pool = tf.keras.layers.MaxPool2D(pool_size=[2,2], strides=[2,2], padding='valid')
-        self.conv2_1 = Conv2DVgg(filters=128,kernel_size=[3,3],strides=[1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.conv2_2 = Conv2DVgg(filters=128,kernel_size=[3,3],strides=[1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.l2_max_pool = tf.keras.layers.MaxPool2D(pool_size=[2,2], strides=[2,2], padding='valid')
-        self.conv3_1 = Conv2DVgg(filters=256,kernel_size=[3,3],strides=[1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.conv3_2 = Conv2DVgg(filters=256,kernel_size=[3,3],strides=[1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.conv3_3 = Conv2DVgg(filters=256,kernel_size=[3,3],strides=[1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.l3_max_pool = tf.keras.layers.MaxPool2D(pool_size=[2,2], strides=[2,2], padding='valid')
-        self.conv4_1 = Conv2DVgg(filters=512,kernel_size=[3,3],strides=[1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.conv4_2 = Conv2DVgg(filters=512,kernel_size=[3,3],strides=[1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.conv4_3 = Conv2DVgg(filters=512,kernel_size=[3,3],strides=[1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.l4_max_pool = tf.keras.layers.MaxPool2D(pool_size=[2,2], strides=[2,2], padding='valid')
-        self.conv5_1 = Conv2DVgg(filters=512,kernel_size=[3,3],strides=[1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.conv5_2 = Conv2DVgg(filters=512,kernel_size=[3,3],strides=[1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.conv5_3 = Conv2DVgg(filters=512,kernel_size=[3,3],strides=[1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.l5_max_pool = tf.keras.layers.MaxPool2D(pool_size=[2,2], strides=[2,2], padding='valid')
-        self.flatten= tf.keras.layers.Flatten()
-        self.dense6 = DenseVgg(kernel_size=4096,use_bias=True,activation=None,dtype=dtype)
-        self.dense7 = DenseVgg(kernel_size=4096,use_bias=True,activation=None,dtype=dtype)
-        self.dense8 = DenseVgg(kernel_size=1000,use_bias=True,activation=None,dtype=dtype)
+from typeguard import typechecked
+class Vgg16FeatureExtractor(tf.keras.Model):
+    @typechecked
+    def __init__(self,
+                 feature_nums:int,
+                 name:str="vgg16",
+                 dimension_type:str="2D",**kwargs):
+        super(Vgg16FeatureExtractor,self).__init__(name,**kwargs)
+        self.model = tf.keras.applications.vgg16.VGG16(
+                     include_top=False, weights='imagenet', input_tensor=None,
+                     input_shape=None, pooling=None, classes=1000,
+                     classifier_activation='softmax')
+        self.model.trainable = False
+        self.feature_nums = feature_nums
+        self.dimension_type = dimension_type.upper()
+    def preprocess_input(self,input):
+        return tf.keras.applications.vgg16.preprocess_input(input)
     def build(self,input_shape):
-        flow_shape=self.conv1_1.build(input_shape=input_shape)
-        flow_shape=self.conv1_2.build(input_shape=flow_shape) 
-        flow_shape[-3]//=2
-        flow_shape[-2]//=2
-        flow_shape=self.conv2_1.build(input_shape=flow_shape) 
-        flow_shape=self.conv2_2.build(input_shape=flow_shape) 
-        flow_shape[-3]//=2
-        flow_shape[-2]//=2
-        flow_shape=self.conv3_1.build(input_shape=flow_shape) 
-        flow_shape=self.conv3_2.build(input_shape=flow_shape) 
-        flow_shape=self.conv3_3.build(input_shape=flow_shape)
-        flow_shape[-3]//=2
-        flow_shape[-2]//=2
-        flow_shape=self.conv4_1.build(input_shape=flow_shape) 
-        flow_shape=self.conv4_2.build(input_shape=flow_shape) 
-        flow_shape=self.conv4_3.build(input_shape=flow_shape) 
-        flow_shape[-3]//=2
-        flow_shape[-2]//=2
-        flow_shape=self.conv5_1.build(input_shape=flow_shape) 
-        flow_shape=self.conv5_2.build(input_shape=flow_shape) 
-        flow_shape=self.conv5_3.build(input_shape=flow_shape) 
-        flow_shape[-3]//=2
-        flow_shape[-2]//=2
-        tmp = 1
-        for index in range(len(flow_shape)-1):
-            tmp = tmp*flow_shape[index+1]
-        flow_shape = [flow_shape[0],tmp]
-        flow_shape=self.dense6.build(input_shape=flow_shape)
-        flow_shape=self.dense7.build(input_shape=flow_shape)
-        flow_shape=self.dense8.build(input_shape=flow_shape)
-        self.built = True
-        output_shape = flow_shape[:]
-
-        self.conv1_1.w.assign(self.data_dict["conv1_1"][0])
-        self.conv1_1.b.assign(self.data_dict["conv1_1"][1])
-        self.conv1_2.w.assign(self.data_dict["conv1_2"][0])
-        self.conv1_2.b.assign(self.data_dict["conv1_2"][1])
-        self.conv2_1.w.assign(self.data_dict["conv2_1"][0])
-        self.conv2_1.b.assign(self.data_dict["conv2_1"][1])
-        self.conv2_2.w.assign(self.data_dict["conv2_2"][0])
-        self.conv2_2.b.assign(self.data_dict["conv2_2"][1])
-        self.conv3_1.w.assign(self.data_dict["conv3_1"][0])
-        self.conv3_1.b.assign(self.data_dict["conv3_1"][1])
-        self.conv3_2.w.assign(self.data_dict["conv3_2"][0])
-        self.conv3_2.b.assign(self.data_dict["conv3_2"][1])
-        self.conv3_3.w.assign(self.data_dict["conv3_3"][0])
-        self.conv3_3.b.assign(self.data_dict["conv3_3"][1])
-        self.conv4_1.w.assign(self.data_dict["conv4_1"][0])
-        self.conv4_1.b.assign(self.data_dict["conv4_1"][1])
-        self.conv4_2.w.assign(self.data_dict["conv4_2"][0])
-        self.conv4_2.b.assign(self.data_dict["conv4_2"][1])
-        self.conv4_3.w.assign(self.data_dict["conv4_3"][0])
-        self.conv4_3.b.assign(self.data_dict["conv4_3"][1])
-        self.conv5_1.w.assign(self.data_dict["conv5_1"][0])
-        self.conv5_1.b.assign(self.data_dict["conv5_1"][1])
-        self.conv5_2.w.assign(self.data_dict["conv5_2"][0])
-        self.conv5_2.b.assign(self.data_dict["conv5_2"][1])
-        self.conv5_3.w.assign(self.data_dict["conv5_3"][0])
-        self.conv5_3.b.assign(self.data_dict["conv5_3"][1])
-        self.dense6.w.assign(self.data_dict["fc6"][0])
-        self.dense6.b.assign(self.data_dict["fc6"][1])
-        self.dense7.w.assign(self.data_dict["fc7"][0])
-        self.dense7.b.assign(self.data_dict["fc7"][1])
-        self.dense8.w.assign(self.data_dict["fc8"][0])
-        self.dense8.b.assign(self.data_dict["fc8"][1])
-
-        # ['conv1_1', 'conv1_2', 'conv2_1', 'conv2_2', 'conv3_1', 'conv3_2', 'conv3_3', 'conv4_1', 'conv4_2', 'conv4_3', 'conv5_1', 'conv5_2', 'conv5_3', 'fc6', 'fc7', 'fc8']
-        return output_shape
-    def call(self,x,training=True,scale=8):
-        x = tf.broadcast_to(x,shape=x.shape[0:-1]+[3])
-        if scale < 1:
-            return x 
-        x=self.conv1_1(x,training=training)
-        x=self.conv1_2(x,training=training)
-        if scale < 2:
-            return x 
-        x=self.l1_max_pool(x,training=training)
-        x=self.conv2_1(x,training=training)
-        x=self.conv2_2(x,training=training)
-        if scale < 3:
-            return x
-        x=self.l2_max_pool(x,training=training)
-        x=self.conv3_1(x,training=training)
-        x=self.conv3_2(x,training=training)
-        x=self.conv3_3(x,training=training)
-        if scale < 4:
-            return x
-        x=self.l3_max_pool(x,training=training)
-        x=self.conv4_1(x,training=training)
-        x=self.conv4_2(x,training=training)
-        x=self.conv4_3(x,training=training)
-        if scale < 5:
-            return x
-        x=self.l4_max_pool(x,training=training)
-        x=self.conv5_1(x,training=training)
-        x=self.conv5_2(x,training=training)
-        x=self.conv5_3(x,training=training)
-        if scale < 6:
-            return x
-        x=self.l5_max_pool(x,training=training)
-        x = self.flatten(x)
-        x=self.dense6(x,training=training)
-        if scale < 7:
-            return x
-        x=self.dense7(x,training=training)
-        if scale < 8:
-            return x
-        x=self.dense8(x,training=training)
-        return x
+        super().build(input_shape)
+    def summary(self):
+        self.model.summary()
+    def call(self,inputs,**kwargs):
+        return self.model.call(inputs,**kwargs)
 #######################################################################################################
 class Vgg16LayerBuf(tf.keras.Model):
     # 输出VGG16的前指定若干层
@@ -788,3 +672,7 @@ if __name__ == "__main__":
     # print(time.time()-start)
     # for index in range(5):
     #     print(m[index].result().numpy())
+    vf = Vgg16FeatureExtractor(10)
+    vf.build((None, 128, 128, 3))
+    vf.summary()
+

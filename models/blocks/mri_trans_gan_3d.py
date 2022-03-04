@@ -51,6 +51,7 @@ class Conv7S1(tf.keras.layers.Layer):#c7s1_k
     def call(self,x,training=True):
         x = self.l1_conv(x,training=training)
         x = self.l2_norm(x,training=training)
+        x = x*1.0
         y = self.l3_activation(x,training=training)
         return y
 #--------------------------------------------------------------------------------------------#

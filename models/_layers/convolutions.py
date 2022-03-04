@@ -618,10 +618,35 @@ if __name__ == "__main__":
     print(y._build_input_shape)
     y.build([None,3,1])
     print(y._build_input_shape)
+    x = tf.constant([1.,2.,3.,4.,5.],shape=[1,5,1])
+    conv1d_ = tf.keras.layers.Conv1D(filters=1, kernel_size=[2,]*1, strides=(1,)*1, padding="same",dilation_rate=1,kernel_initializer=tf.initializers.Ones(),use_bias=False)
+    conv1d = ConvPadConcretization(conv1d_, padding_mode='constant',padding_constant=1)
+    y = conv1d(x)
+    print(tf.squeeze(y))
+    conv1d_ = tf.keras.layers.Conv1D(filters=1, kernel_size=[2,]*1, strides=(1,)*1, padding="same",dilation_rate=1,kernel_initializer=tf.initializers.Ones(),use_bias=False)
+    conv1d = ConvPadConcretization(conv1d_, padding_mode='reflect')
+    y = conv1d(x)
+    print(tf.squeeze(y))
+    conv1d_ = tf.keras.layers.Conv1D(filters=1, kernel_size=[2,]*1, strides=(1,)*1, padding="same",dilation_rate=1,kernel_initializer=tf.initializers.Ones(),use_bias=False)
+    conv1d = ConvPadConcretization(conv1d_, padding_mode='symmetric')
+    y = conv1d(x)
+    # x --> padded_x [1.,2.,3.,4.,5.,5.], zero padding x from right side
+    # kernel = [1,1]
+    # padded_x --> y [3.,7.,5.,9.,10.], conv padded x by kernel, and do not need extral 'padding'
+    print(tf.squeeze(y))
 
-
-       
-
+    import numpy as np
+    x = tf.constant([1.,2.,3.,4.,5.],shape=[1,5,1])
+    print(tf.squeeze(x))
+    conv1d = tf.keras.layers.Conv1D(filters=1, kernel_size=[3,]*1, strides=(2,)*1, padding="same",dilation_rate=1,kernel_initializer=tf.initializers.Ones(),use_bias=False)
+    conv1d_ = tf.keras.layers.Conv1D(filters=1, kernel_size=[3,]*1, strides=(2,)*1, padding="same",dilation_rate=1,kernel_initializer=tf.initializers.Ones(),use_bias=False)
+    conv1d_2 = ConvPadConcretization(conv1d_, padding_mode='constant',padding_constant=0)
+    # 'constant' padding with constant 0, wrappered layer should have the same behavior than original one. So:
+    y = conv1d(x)
+    print(tf.squeeze(y))
+    y_2 = conv1d_2(x)
+    print(tf.squeeze(y_2))
+    print(np.isclose(tf.reduce_mean(y-y_2),0.0))
 
     
  

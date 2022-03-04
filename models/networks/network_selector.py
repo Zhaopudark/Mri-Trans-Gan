@@ -3,7 +3,7 @@ import os
 base = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(base)
 sys.path.append(os.path.join(base,'../'))
-from networks import mri_trans_gan,mri_trans_gan_v2,mri_trans_gan_v3
+from networks import mri_trans_gan,mri_trans_gan_v2,mri_trans_gan_v3,mri_trans_gan_v4
 __all__ = [ 
     "NetworkSelector"
 ]
@@ -20,6 +20,9 @@ class NetworkSelector():
         elif _architecture_name == "mri_trans_gan_v3":
             self._architectures["generator"] = mri_trans_gan_v3.Generator
             self._architectures["discriminator"] = mri_trans_gan_v3.Discriminator
+        elif _architecture_name == "mri_trans_gan_v4":
+            self._architectures["generator"] = mri_trans_gan_v4.Generator
+            self._architectures["discriminator"] = mri_trans_gan_v4.Discriminator
         else:
             raise ValueError("Unsupported architecture {}!".format(self.__architecture_name))
     @property
