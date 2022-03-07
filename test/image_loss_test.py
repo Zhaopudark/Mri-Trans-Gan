@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 import tensorflow as tf 
 from training.losses._image_losses import MeanVolumeGradientError
-from training.losses._image_losses import MeanFeaureReconstructionError
+from training.losses._image_losses import MeanFeatureReconstructionError
 from training.losses._image_losses import MeanStyleReconstructionError
 def _assert_allclose_according_to_type(
     a,
@@ -216,10 +216,10 @@ def test_MeanVolumeGradientError_from_config(shape,mode,data_format,reduction):
 #--------------------------------------------------------------------#
 @pytest.mark.parametrize("mode", ["L1","L2"])
 @pytest.mark.parametrize("reduction", [tf.keras.losses.Reduction.AUTO,tf.keras.losses.Reduction.NONE,tf.keras.losses.Reduction.SUM,tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE])
-def test_MeanFeaureReconstructionError_accuracy(mode,reduction):
+def test_MeanFeatureReconstructionError_accuracy(mode,reduction):
     tf.keras.utils.set_random_seed(1)
     tf.config.experimental.enable_op_determinism()
-    loss = MeanFeaureReconstructionError(mode=mode,reduction=reduction)
+    loss = MeanFeatureReconstructionError(mode=mode,reduction=reduction)
     feature_1 = tf.random.normal(shape=[2,8,8,3])
     feature_2 = tf.random.normal(shape=[2,8,8,4])
     feature_3 = tf.random.normal(shape=[2,8,8,5])
@@ -281,10 +281,10 @@ def test_MeanFeaureReconstructionError_accuracy(mode,reduction):
 
 @pytest.mark.parametrize("mode", ["L1","L2"])
 @pytest.mark.parametrize("reduction", [tf.keras.losses.Reduction.AUTO,tf.keras.losses.Reduction.NONE,tf.keras.losses.Reduction.SUM,tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE])
-def test_MeanFeaureReconstructionError_sample_weight(mode,reduction):
+def test_MeanFeatureReconstructionError_sample_weight(mode,reduction):
     tf.keras.utils.set_random_seed(1)
     tf.config.experimental.enable_op_determinism()
-    loss = MeanFeaureReconstructionError(mode=mode,reduction=reduction)
+    loss = MeanFeatureReconstructionError(mode=mode,reduction=reduction)
     feature_1 = tf.random.normal(shape=[2,8,8,3])
     feature_2 = tf.random.normal(shape=[2,8,8,4])
     feature_3 = tf.random.normal(shape=[2,8,8,5])
@@ -336,11 +336,11 @@ def test_MeanFeaureReconstructionError_sample_weight(mode,reduction):
 
 @pytest.mark.parametrize("mode", ["L1","L2"])
 @pytest.mark.parametrize("reduction", [tf.keras.losses.Reduction.AUTO,tf.keras.losses.Reduction.NONE,tf.keras.losses.Reduction.SUM,tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE])
-def test_MeanFeaureReconstructionError_from_config(mode,reduction):
+def test_MeanFeatureReconstructionError_from_config(mode,reduction):
     tf.keras.utils.set_random_seed(1)
     tf.config.experimental.enable_op_determinism()
-    loss = MeanFeaureReconstructionError(mode=mode,reduction=reduction)
-    loss_ = MeanFeaureReconstructionError.from_config(loss.get_config())
+    loss = MeanFeatureReconstructionError(mode=mode,reduction=reduction)
+    loss_ = MeanFeatureReconstructionError.from_config(loss.get_config())
     feature_1 = tf.random.normal(shape=[2,8,8,3])
     feature_2 = tf.random.normal(shape=[2,8,8,4])
     feature_3 = tf.random.normal(shape=[2,8,8,5])

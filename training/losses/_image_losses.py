@@ -15,16 +15,12 @@ import logging
 from typeguard import typechecked
 import numpy as np 
 import tensorflow as tf
-
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(base,'../../'))
-# from blocks.vgg import Vgg16LayerBuf_V3 as Fg
-from models.blocks.vgg import Vgg16LayerBuf_V4 as Fg #V4 适应3x128x128
-from models.blocks.vgg import Vgg16LayerBuf_V2 as Fg2D
-from models.blocks.vgg import Vgg16LayerBuf_V2 as StyFg
 __all__ = [
-    "CycleConsistencyLoss",
-    "DualGanReconstructionLoss",
+    "MeanAbsoluteError",
+    "MeanSquaredError",
+    "MeanVolumeGradientError",
+    "MeanFeatureReconstructionError",
+    "MeanStyleReconstructionError",
 ]
 class MeanAbsoluteError(tf.keras.losses.MeanAbsoluteError):
     def __init__(self,*args,**kwargs) -> None:
@@ -35,18 +31,26 @@ class MeanSquaredError(tf.keras.losses.MeanSquaredError):
         super().__init__(*args,**kwargs)
 
 class LossCrossListWrapper(tf.keras.losses.Loss):
-    """Wraps a loss function in the `Loss` class."""
-    def __init__(self,*args,**kwargs):
+    """
+    Wraps a loss function in the `Loss` class.
+    TODO 彻底对loss 解耦 拆分成两个任务 在list上的loss 以及list中的每个的tensor loss
+    """
+    @typechecked
+    def __init__(self,mean_over_batch:bool=False,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.loss_kwargs = {}
+        self.loss_kwargs["mean_over_batch"] = mean_over_batch # TODO @property
+        self.mean_over_batch = mean_over_batch
     def loss_func(self,x1,x2):
         NotImplementedError('Must be implemented in subclasses.')
     def call(self,y_true,y_pred):
         buf = []
         for x1,x2 in zip(y_true,y_pred):
-            buf.append(self.loss_func(x1,x2))
-            # print(buf[-1].shape)
-        # print(len(buf))
+            loss_func_output = self.loss_func(x1,x2)
+            if self.mean_over_batch:
+                buf.append(tf.reduce_mean(loss_func_output)) # TODO 
+            else:
+                buf.append(loss_func_output)
         return buf
     def get_config(self):
         config = {}
@@ -86,7 +90,7 @@ class MeanVolumeGradientError(LossCrossListWrapper):
                      loss_func(volumn_gradient_D{N-1}_ture,volumn_gradient_D{N-1}_pred)]  # shape = [N-2,B,C]
     Second 
         Use sample_weight to give each temp_loss's volume a specific weight
-        The same as MeanFeaureReconstructionError
+        The same as MeanFeatureReconstructionError
         So in this class, since temp_loss has shape [N-2,B,C]
             sample_weight' right shape is:
                 [], 
@@ -101,7 +105,7 @@ class MeanVolumeGradientError(LossCrossListWrapper):
         So, we should modify the behavior, if user give a sample_weight in rank 1, we add a dimension to it.
     Third: 
         Reduce weighted_loss by reduction.
-        The same as MeanFeaureReconstructionError
+        The same as MeanFeatureReconstructionError
 
     Deprecated:
         def mgd(x,y):
@@ -195,10 +199,10 @@ class MeanVolumeGradientError(LossCrossListWrapper):
             if len(sample_weight.shape)==1:
                 sample_weight = tf.expand_dims(sample_weight,[-1])
         return super().__call__(y_true,y_pred,sample_weight)
-class MeanFeaureReconstructionError(LossCrossListWrapper):
+class MeanFeatureReconstructionError(LossCrossListWrapper):
     """
     see: https://arxiv.org/pdf/1603.08155.pdf
-    MeanFeaureReconstructionError 
+    MeanFeatureReconstructionError 
     calculate the error between 2 lists of feature maps 
     give out a mean scaler 
     sample_weight can be used to set weights.
@@ -268,7 +272,7 @@ class MeanFeaureReconstructionError(LossCrossListWrapper):
                 reduced_weighted_loss will in shape "[]"
         So, in this class, we finally cannot got ideal output with shape "[B]", if just inherit from tf.keras.losses.Loss.
         TODO  Make this class maintain batch dimension and leave the decision of reduction to users. This problem does not influence traditional usage, since we usually
-        consider "Feaure Reconstruction Loss" when batch size set to 1
+        consider "Feature Reconstruction Loss" when batch size set to 1
     a target feature map X of shape [H,W,C]
     a current feature map X_ of shape [H,W,C]
     
@@ -282,7 +286,7 @@ class MeanFeaureReconstructionError(LossCrossListWrapper):
         elif mode.upper() == "L2":
             self.inner_loss = self.l2_loss
         else:
-            raise ValueError("MeanFeaureReconstructionError's inner loss mode only support in 'L1' or 'L2', not{}".format(mode))
+            raise ValueError("MeanFeatureReconstructionError's inner loss mode only support in 'L1' or 'L2', not{}".format(mode))
     def _get_reduce_or_norm_axis(self,x):
         return list(range(len(x.shape)))[1::]
     def l1_loss(self,x1,x2): # [B,x,x,x,x]
@@ -333,7 +337,7 @@ class MeanStyleReconstructionError(LossCrossListWrapper):
         temp_loss = [loss_func(f1_ture,f1_pred),loss_func(f2_ture,f2_pred),...,loss_func(fn_ture,fn_pred)]  # shape = [n,B] 
     Second 
         Use sample_weight to give each temp_loss's volume a specific weight
-        The same as MeanFeaureReconstructionError
+        The same as MeanFeatureReconstructionError
         So in this class, since  temp_loss has shape [n,B]
             sample_weight' right shape is:
                 [], 
@@ -349,7 +353,7 @@ class MeanStyleReconstructionError(LossCrossListWrapper):
         is designed for "BATCH" originally.
     Third: 
         Reduce weighted_loss by reduction.
-        The same as MeanFeaureReconstructionError
+        The same as MeanFeatureReconstructionError
     """
     @typechecked
     def __init__(self,name:str="mean_style_reco_error",data_format:str="channels_last",**kwargs) -> None:
@@ -382,68 +386,12 @@ class MeanStyleReconstructionError(LossCrossListWrapper):
 
 if __name__ == "__main__":
     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
-    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)  
+
+
+
     tf.keras.utils.set_random_seed(1)
     tf.config.experimental.enable_op_determinism()
-    y_true = tf.random.normal(shape=[2,8,8,3])
-    y_pred = tf.random.normal(shape=[2,8,8,3])
-    sample_weight = tf.random.uniform(shape=[2,8,9,10,11],minval=0.0,maxval=1.0)
-    # Using 'auto'/'sum_over_batch_size' reduction type.
-
-    def grma_2D(x):
-        b,h,w,c = x.shape
-        m = tf.reshape(x,[b,-1,c])
-        m_T = tf.transpose(m,perm=[0,2,1])
-        g = (1.0/(h*w*c))*tf.matmul(m_T,m)
-        # tf.print(tf.reduce_mean(g))
-        return g # [B,C,C]
-    def grma_3D(x):
-        b,d,h,w,c = x.shape
-        m = tf.reshape(x,[b,-1,c])
-        m_T = tf.transpose(m,perm=[0,2,1])
-        g = (1.0/(d*h*w*c))*tf.matmul(m_T,m)
-        return g # [B,C,C]
-    def style_diff_2D(x,y):
-        style_diff = tf.reduce_mean(tf.square(tf.norm(grma_2D(x)-grma_2D(y),ord="fro",axis=[1,2]))) # 在batch 维度取均值
-        return style_diff
-    def style_diff_3D(x,y):
-        style_diff = tf.reduce_mean(tf.square(tf.norm(grma_3D(x)-grma_3D(y),ord="fro",axis=[1,2]))) # 在batch 维度取均值
-        return style_diff
-    def _assert_allclose_according_to_type(
-            a,
-            b,
-            rtol=1e-6,
-            atol=1e-6,
-            float_rtol=1e-6,
-            float_atol=1e-6,
-            half_rtol=1e-3,
-            half_atol=1e-3,
-            bfloat16_rtol=1e-2,
-            bfloat16_atol=1e-2,
-        ):
-        """
-        Similar to tf.test.TestCase.assertAllCloseAccordingToType()
-        but this doesn't need a subclassing to run.
-        """
-        a = np.array(a)
-        b = np.array(b)
-        # types with lower tol are put later to overwrite previous ones.
-        if (
-            a.dtype == np.float32
-            or b.dtype == np.float32
-            or a.dtype == np.complex64
-            or b.dtype == np.complex64
-        ):
-            rtol = max(rtol, float_rtol)
-            atol = max(atol, float_atol)
-        if a.dtype == np.float16 or b.dtype == np.float16:
-            rtol = max(rtol, half_rtol)
-            atol = max(atol, half_atol)
-        if a.dtype == tf.bfloat16.as_numpy_dtype or b.dtype == tf.bfloat16.as_numpy_dtype:
-            rtol = max(rtol, bfloat16_rtol)
-            atol = max(atol, bfloat16_atol)
-        np.testing.assert_allclose(a, b, rtol=rtol, atol=atol)
-        
     loss = MeanStyleReconstructionError()
     feature_1 = tf.random.normal(shape=[2,8,8,3])
     feature_2 = tf.random.normal(shape=[2,8,8,4])
@@ -453,60 +401,50 @@ if __name__ == "__main__":
     feature_6 = tf.random.normal(shape=[2,8,8,5])
     y_true = [feature_1,feature_2,feature_3]
     y_pred = [feature_4,feature_5,feature_6]
-    n = 3
-    B = 2 
-    y = loss(y_true,y_pred,sample_weight=[1,1,1])
+    y = loss(y_true,y_pred)
     print(y)
-    perm=[0,1,2,3]
-    buf = []
-    for x1,x2 in zip(y_true,y_pred):
-        buf.append(style_diff_2D(tf.transpose(x1,perm=perm),tf.transpose(x2,perm=perm)))
-    print(buf)
-    y_ = tf.reduce_mean(buf)
-    computed = tf.reduce_mean(y-y_)
-    _assert_allclose_according_to_type(computed,0.0)
-    
-    # mfe = MeanStyleReconstructionError()
-    # print(mfe(y_true,y_pred))
-    # print(1/3*(tf.reduce_mean(tf.abs(feature_1-feature_4))+tf.reduce_mean(tf.abs(feature_2-feature_5))+tf.reduce_mean(tf.abs(feature_3-feature_6))))
-    # mfe = MeanStyleReconstructionError(reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE)
-    # print(mfe(y_true,y_pred,sample_weight=[1,1,1]))
-    # mfe = MeanStyleReconstructionError(reduction=tf.keras.losses.Reduction.AUTO)
-    # print(mfe(y_true,y_pred,sample_weight=[1,1,1]))
-    # mfe = MeanStyleReconstructionError(reduction=tf.keras.losses.Reduction.SUM)
-    # print(mfe(y_true,y_pred,sample_weight=[1,1,1]))
-    # mfe = MeanStyleReconstructionError(reduction=tf.keras.losses.Reduction.NONE)
-    # print(mfe(y_true,y_pred,sample_weight=[1,1,1]))
-    # print(1/3*(tf.reduce_mean(tf.abs(feature_1-feature_4))+tf.reduce_mean(tf.abs(feature_2-feature_5))+tf.reduce_mean(tf.abs(feature_3-feature_6))))
-    # print(mfe(y_true,y_pred,sample_weight=[0.3,1,2]))
-    # print(0.3/3*tf.reduce_mean(tf.abs(feature_1-feature_4))+1/3*tf.reduce_mean(tf.abs(feature_2-feature_5))+2/3*tf.reduce_mean(tf.abs(feature_3-feature_6)))
-    # mfe = MeanStyleReconstructionError(data_format="channels_last")
-    # print(mfe(y_true,y_pred))
-    # print(1/3*(tf.reduce_mean(tf.square(feature_1-feature_4))+tf.reduce_mean(tf.square(feature_2-feature_5))+tf.reduce_mean(tf.square(feature_3-feature_6))))
-    # mfe = MeanStyleReconstructionError(data_format="channels_last",reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE)
-    # print(mfe(y_true,y_pred,sample_weight=[1,1,1]))
-    # print(1/3*(tf.reduce_mean(tf.square(feature_1-feature_4))+tf.reduce_mean(tf.square(feature_2-feature_5))+tf.reduce_mean(tf.square(feature_3-feature_6))))
-    # print(mfe(y_true,y_pred,sample_weight=[0.3,1,2]))
-    # print(0.3/3*tf.reduce_mean(tf.square(feature_1-feature_4))+1/3*tf.reduce_mean(tf.square(feature_2-feature_5))+2/3*tf.reduce_mean(tf.square(feature_3-feature_6)))
-   
 
-        
+    y_true = [feature_1,feature_2,feature_3,feature_1,feature_2,feature_3]
+    y_pred = [feature_4,feature_5,feature_6,feature_4,feature_5,feature_6]
+    y = loss(y_true,y_pred)
+    print(y)
 
-    
-    
+    # feature_1 = tf.stack([feature_1,feature_1],axis=1)
+    # feature_2 = tf.stack([feature_2,feature_2],axis=1)
+    # feature_3 = tf.stack([feature_3,feature_3],axis=1)
+    # feature_4 = tf.stack([feature_4,feature_4],axis=1)
+    # feature_5 = tf.stack([feature_5,feature_5],axis=1)
+    # feature_6 = tf.stack([feature_6,feature_6],axis=1)
+    # y_true = [feature_1,feature_2,feature_3]
+    # y_pred = [feature_4,feature_5,feature_6]
+    # y = loss(y_true,y_pred)
+    # print(y)
 
+    # feature_1 = tf.stack([feature_1,feature_1],axis=1)
+    # feature_2 = tf.stack([feature_2,feature_2],axis=1)
+    # feature_3 = tf.stack([feature_3,feature_3],axis=1)
+    # feature_4 = tf.stack([feature_4,feature_4],axis=1)
+    # feature_5 = tf.stack([feature_5,feature_5],axis=1)
+    # feature_6 = tf.stack([feature_6,feature_6],axis=1)
+    # # feature_1 = tf.transpose(feature_1,perm=[1,0,2,3,4,5])
+    # # feature_2 = tf.transpose(feature_2,perm=[1,0,2,3,4,5])
+    # # feature_3 = tf.transpose(feature_3,perm=[1,0,2,3,4,5])
+    # # feature_4 = tf.transpose(feature_4,perm=[1,0,2,3,4,5])
+    # # feature_5 = tf.transpose(feature_5,perm=[1,0,2,3,4,5])
+    # # feature_6 = tf.transpose(feature_6,perm=[1,0,2,3,4,5])
+    # y_true = [feature_1,feature_2,feature_3]
+    # y_pred = [feature_4,feature_5,feature_6]
+    # y = loss(y_true,y_pred)
+    # print(y)
 
+    # print(feature_1.shape)
+    # feature_1 = tf.stack([feature_1,feature_1,feature_1,feature_1],axis=1)
+    # print(feature_1.shape)
 
 
 
 
     
-
-
-
-    
-
-   
 # class DualGanReconstructionLoss():
 #     def __init__(self,args): #MAE MSE MGD Per Sty
 #         self.mae_flag = bool(args.MAE)
