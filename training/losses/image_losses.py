@@ -15,10 +15,6 @@ import tensorflow as tf
 import numpy as np 
 base = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(base,'../../'))
-# from blocks.vgg import Vgg16LayerBuf_V3 as Fg
-from models.blocks.vgg import Vgg16LayerBuf_V4 as Fg #V4 适应3x128x128
-from models.blocks.vgg import Vgg16LayerBuf_V2 as Fg2D
-from models.blocks.vgg import Vgg16LayerBuf_V2 as StyFg
 from models.blocks.vgg import PerceptualLossExtractor
 from training.losses._image_losses import MeanVolumeGradientError
 __all__ = [
