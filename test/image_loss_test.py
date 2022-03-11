@@ -4,6 +4,7 @@ import tensorflow as tf
 from training.losses._image_losses import MeanVolumeGradientError
 from training.losses._image_losses import MeanFeatureReconstructionError
 from training.losses._image_losses import MeanStyleReconstructionError
+from training.losses._image_losses import LossAcrossListWrapper
 def _assert_allclose_according_to_type(
     a,
     b,
@@ -117,49 +118,121 @@ def test_MeanVolumeGradientError_accuracy(shape,mode,data_format,reduction):
         _mgd = mgd 
     N_2 = len(shape)-2
     B = shape[0]
-    if reduction in [tf.keras.losses.Reduction.AUTO,tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE]:
-        if len(shape)<=5:
-            if data_format == "channels_first":
-                C = shape[1]
-                if len(shape)==4:
-                    perm = [0,2,3,1]
-                    
-                elif len(shape)==5:
-                    perm = [0,2,3,4,1]
-                else:
-                    raise ValueError("Inner error.")
+    if len(shape)<=5:
+        if data_format == "channels_first":
+            C = shape[1]
+            if len(shape)==4:
+                perm = [0,2,3,1]   
             else:
-                C = shape[-1]
-                perm = list(range(len(shape)))
-            y_ = _mgd(tf.transpose(y_true,perm=perm),tf.transpose(y_pred,perm=perm))
-            assert y.shape==y_.shape
-            computed = tf.reduce_mean(y-y_)
-            _assert_allclose_according_to_type(computed,0.0)
-    if reduction == tf.keras.losses.Reduction.SUM:
-        if len(shape)<=5:
-            if data_format == "channels_first":
-                C = shape[1]
-                if len(shape)==4:
-                    perm = [0,2,3,1]
-                    points = tf.reduce_prod(shape,axis=[])
-                elif len(shape)==5:
-                    perm = [0,2,3,4,1]
-                else:
-                    raise ValueError("Inner error.")
-            else:
-                C = shape[-1]
-                perm = list(range(len(shape)))
-            y = loss(y_true,y_pred,sample_weight=[1]*(len(shape)-2))
-            y_ = _mgd(tf.transpose(y_true,perm=perm),tf.transpose(y_pred,perm=perm))
-            assert y.shape==y_.shape
-            computed = tf.reduce_mean(y/(N_2*B*C)-y_)
-            _assert_allclose_according_to_type(computed,0.0)
-    if reduction == tf.keras.losses.Reduction.NONE:
+                perm = [0,2,3,4,1]
+        else:
+            C = shape[-1]
+            perm = list(range(len(shape)))
+        y_ = _mgd(tf.transpose(y_true,perm=perm),tf.transpose(y_pred,perm=perm))
+        assert y.shape==[B,N_2,C]
+        computed = tf.reduce_mean(y-y_)
+        _assert_allclose_according_to_type(computed,0.0)
+    else:
         if data_format == "channels_first":
             C = shape[1]
         else:
             C = shape[-1]
-        assert y.shape==(N_2,B,C)
+        assert y.shape==[B,N_2,C]
+
+
+@pytest.mark.parametrize("reduction", [tf.keras.losses.Reduction.AUTO,tf.keras.losses.Reduction.NONE,tf.keras.losses.Reduction.SUM,tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE])
+def test_LossAcrossListWrapper_accuracy(reduction):
+    tf.keras.utils.set_random_seed(1)
+    tf.config.experimental.enable_op_determinism()
+
+    feature_1 = tf.random.normal(shape=[7,4,5,6,3])
+    feature_2 = tf.random.normal(shape=[7,4,5,6,4])
+    feature_3 = tf.random.normal(shape=[7,4,5,6,5])
+    feature_4 = tf.random.normal(shape=[7,4,5,6,3])
+    feature_5 = tf.random.normal(shape=[7,4,5,6,4])
+    feature_6 = tf.random.normal(shape=[7,4,5,6,5])
+    y_true = [feature_1,feature_2,feature_3]
+    y_pred = [feature_4,feature_5,feature_6]
+
+    loss1 = MeanVolumeGradientError(reduction=reduction)
+    _loss = MeanVolumeGradientError(reduction=reduction)
+    loss2 = LossAcrossListWrapper(_loss)
+    y1 = 1/3*tf.reduce_mean(loss1(feature_1,feature_4))+ 1/3*tf.reduce_mean(loss1(feature_2,feature_5))+ 1/3*tf.reduce_mean(loss1(feature_3,feature_6))
+    y2 = loss2(y_true,y_pred)
+    computed = tf.reduce_mean(y1-y2)
+    _assert_allclose_according_to_type(computed,0.0)
+    y1 = 2/3*tf.reduce_mean(loss1(feature_1,feature_4))+ 3/3*tf.reduce_mean(loss1(feature_2,feature_5))+ 4/3*tf.reduce_mean(loss1(feature_3,feature_6))
+    y2 = loss2(y_true,y_pred,[2,3,4])
+    computed = tf.reduce_mean(y1-y2)
+    _assert_allclose_according_to_type(computed,0.0)
+
+    loss1 = MeanFeatureReconstructionError(reduction=reduction)
+    _loss = MeanFeatureReconstructionError(reduction=reduction)
+    loss2 = LossAcrossListWrapper(_loss)
+    y1 = 1/3*tf.reduce_mean(loss1(feature_1,feature_4))+ 1/3*tf.reduce_mean(loss1(feature_2,feature_5))+ 1/3*tf.reduce_mean(loss1(feature_3,feature_6))
+    y2 = loss2(y_true,y_pred)
+    computed = tf.reduce_mean(y1-y2)
+    _assert_allclose_according_to_type(computed,0.0)
+    y1 = 2/3*tf.reduce_mean(loss1(feature_1,feature_4))+ 3/3*tf.reduce_mean(loss1(feature_2,feature_5))+ 4/3*tf.reduce_mean(loss1(feature_3,feature_6))
+    y2 = loss2(y_true,y_pred,[2,3,4])
+    computed = tf.reduce_mean(y1-y2)
+    _assert_allclose_according_to_type(computed,0.0)
+
+
+    loss1 = MeanStyleReconstructionError(reduction=reduction)
+    _loss = MeanStyleReconstructionError(reduction=reduction)
+    loss2 = LossAcrossListWrapper(_loss)
+    y1 = 1/3*tf.reduce_mean(loss1(feature_1,feature_4))+ 1/3*tf.reduce_mean(loss1(feature_2,feature_5))+ 1/3*tf.reduce_mean(loss1(feature_3,feature_6))
+    y2 = loss2(y_true,y_pred)
+    computed = tf.reduce_mean(y1-y2)
+    _assert_allclose_according_to_type(computed,0.0)
+    y1 = 2/3*tf.reduce_mean(loss1(feature_1,feature_4))+ 3/3*tf.reduce_mean(loss1(feature_2,feature_5))+ 4/3*tf.reduce_mean(loss1(feature_3,feature_6))
+    y2 = loss2(y_true,y_pred,[2,3,4])
+    computed = tf.reduce_mean(y1-y2)
+    _assert_allclose_according_to_type(computed,0.0)
+
+    loss1 = MeanVolumeGradientError(reduction=reduction)
+    _loss = MeanVolumeGradientError(reduction=reduction)
+    loss2 = LossAcrossListWrapper(_loss)
+    loss3 = LossAcrossListWrapper.from_config(loss2.get_config(),custom_objects={"MeanVolumeGradientError":MeanVolumeGradientError})
+    y1 = 1/3*tf.reduce_mean(loss1(feature_1,feature_4))+ 1/3*tf.reduce_mean(loss1(feature_2,feature_5))+ 1/3*tf.reduce_mean(loss1(feature_3,feature_6))
+    y3 = loss3(y_true,y_pred)
+    computed = tf.reduce_mean(y1-y3)
+    _assert_allclose_according_to_type(computed,0.0)
+    y1 = 2/3*tf.reduce_mean(loss1(feature_1,feature_4))+ 3/3*tf.reduce_mean(loss1(feature_2,feature_5))+ 4/3*tf.reduce_mean(loss1(feature_3,feature_6))
+    y3 = loss3(y_true,y_pred,[2,3,4])
+    computed = tf.reduce_mean(y1-y3)
+    _assert_allclose_according_to_type(computed,0.0)
+
+    loss1 = MeanFeatureReconstructionError(reduction=reduction)
+    _loss = MeanFeatureReconstructionError(reduction=reduction)
+    loss2 = LossAcrossListWrapper(_loss)
+    loss3 = LossAcrossListWrapper.from_config(loss2.get_config(),custom_objects={"MeanFeatureReconstructionError":MeanFeatureReconstructionError})
+    y1 = 1/3*tf.reduce_mean(loss1(feature_1,feature_4))+ 1/3*tf.reduce_mean(loss1(feature_2,feature_5))+ 1/3*tf.reduce_mean(loss1(feature_3,feature_6))
+    y3 = loss3(y_true,y_pred)
+    computed = tf.reduce_mean(y1-y3)
+    _assert_allclose_according_to_type(computed,0.0)
+    y1 = 2/3*tf.reduce_mean(loss1(feature_1,feature_4))+ 3/3*tf.reduce_mean(loss1(feature_2,feature_5))+ 4/3*tf.reduce_mean(loss1(feature_3,feature_6))
+    y3 = loss3(y_true,y_pred,[2,3,4])
+    computed = tf.reduce_mean(y1-y3)
+    _assert_allclose_according_to_type(computed,0.0)
+
+    loss1 = MeanStyleReconstructionError(reduction=reduction)
+    _loss = MeanStyleReconstructionError(reduction=reduction)
+    loss2 = LossAcrossListWrapper(_loss)
+    loss3 = LossAcrossListWrapper.from_config(loss2.get_config(),custom_objects={"MeanStyleReconstructionError":MeanStyleReconstructionError})
+    y1 = 1/3*tf.reduce_mean(loss1(feature_1,feature_4))+ 1/3*tf.reduce_mean(loss1(feature_2,feature_5))+ 1/3*tf.reduce_mean(loss1(feature_3,feature_6))
+    y3 = loss3(y_true,y_pred)
+    computed = tf.reduce_mean(y1-y3)
+    _assert_allclose_according_to_type(computed,0.0)
+    y1 = 2/3*tf.reduce_mean(loss1(feature_1,feature_4))+ 3/3*tf.reduce_mean(loss1(feature_2,feature_5))+ 4/3*tf.reduce_mean(loss1(feature_3,feature_6))
+    y3 = loss3(y_true,y_pred,[2,3,4])
+    computed = tf.reduce_mean(y1-y3)
+    _assert_allclose_according_to_type(computed,0.0)
+
+
+ 
+
 
 @pytest.mark.parametrize("shape", [[2,3,4,5],[2,3,4,5,6],[2,3,4,5,6,7]])
 @pytest.mark.parametrize("mode", ["L1","L2"])
@@ -178,11 +251,10 @@ def test_MeanVolumeGradientError_sample_weight(shape,mode,data_format,reduction)
         C = shape[1]
     else:
         C = shape[-1]
-    shape_list = [[],
-                  [N_2],
-                  [N_2,B],[N_2,1],[1,B],[1,1],
-                  [N_2,B,C],[N_2,1,C],[N_2,B,1],[1,B,C],[N_2,1,1],[1,B,1],[1,1,C],[1,1,1],
-                  [N_2,B,C,1],[N_2,1,C,1],[N_2,B,1,1],[1,B,C,1],[N_2,1,1,1],[1,B,1,1],[1,1,C,1],[1,1,1,1],
+    shape_list = [  [],
+                    [C],[1],[N_2],
+                    [N_2,C],[N_2,1],[1,C],[1,1],
+                    [B,N_2,C],[B,N_2,1],[B,1,C],[1,N_2,C],[B,1,1],[1,N_2,1],[1,1,C],[1,1,1],
                 ]
     for shape in shape_list:
         sample_weight = tf.ones(shape=shape)
@@ -220,64 +292,18 @@ def test_MeanFeatureReconstructionError_accuracy(mode,reduction):
     tf.keras.utils.set_random_seed(1)
     tf.config.experimental.enable_op_determinism()
     loss = MeanFeatureReconstructionError(mode=mode,reduction=reduction)
-    feature_1 = tf.random.normal(shape=[2,8,8,3])
-    feature_2 = tf.random.normal(shape=[2,8,8,4])
-    feature_3 = tf.random.normal(shape=[2,8,8,5])
-    feature_4 = tf.random.normal(shape=[2,8,8,3])
-    feature_5 = tf.random.normal(shape=[2,8,8,4])
-    feature_6 = tf.random.normal(shape=[2,8,8,5])
-    y_true = [feature_1,feature_2,feature_3]
-    y_pred = [feature_4,feature_5,feature_6]
-    n = 3
+    y_true = tf.random.normal(shape=[2,8,8,3])
+    y_pred = tf.random.normal(shape=[2,8,8,3])
     B = 2 
-    y = loss(y_true,y_pred,sample_weight=[1,1,1])
-    if reduction in [tf.keras.losses.Reduction.AUTO,tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE]:
-        if mode == "L1":
-            y_ = 1/3*(tf.reduce_mean(tf.abs(feature_1-feature_4))+tf.reduce_mean(tf.abs(feature_2-feature_5))+tf.reduce_mean(tf.abs(feature_3-feature_6)))
-        else:
-            y_ = 1/3*(tf.reduce_mean(tf.square(feature_1-feature_4))+tf.reduce_mean(tf.square(feature_2-feature_5))+tf.reduce_mean(tf.square(feature_3-feature_6)))
-        assert y.shape==y_.shape
-        computed = tf.reduce_mean(y-y_)
-        _assert_allclose_according_to_type(computed,0.0)
-    if reduction == tf.keras.losses.Reduction.SUM:
-        if mode == "L1":
-            y_ = 1/3*(tf.reduce_mean(tf.abs(feature_1-feature_4))+tf.reduce_mean(tf.abs(feature_2-feature_5))+tf.reduce_mean(tf.abs(feature_3-feature_6)))
-        else:
-            y_ = 1/3*(tf.reduce_mean(tf.square(feature_1-feature_4))+tf.reduce_mean(tf.square(feature_2-feature_5))+tf.reduce_mean(tf.square(feature_3-feature_6)))
-        assert y.shape==y_.shape
-        computed = tf.reduce_mean(y/(n*B)-y_)
-        _assert_allclose_according_to_type(computed,0.0)
-    if reduction == tf.keras.losses.Reduction.NONE:
-        assert y.shape==(n,B)
-    feature_1 = tf.random.normal(shape=[7,8,8,8,3])
-    feature_2 = tf.random.normal(shape=[7,8,8,8,4])
-    feature_3 = tf.random.normal(shape=[7,8,8,8,5])
-    feature_4 = tf.random.normal(shape=[7,8,8,8,3])
-    feature_5 = tf.random.normal(shape=[7,8,8,8,4])
-    feature_6 = tf.random.normal(shape=[7,8,8,8,5])
-    y_true = [feature_1,feature_2,feature_3]
-    y_pred = [feature_4,feature_5,feature_6]
-    n = 3
-    B = 7 
-    y = loss(y_true,y_pred,sample_weight=[1,1,1])
-    if reduction in [tf.keras.losses.Reduction.AUTO,tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE]:
-        if mode == "L1":
-            y_ = 1/3*(tf.reduce_mean(tf.abs(feature_1-feature_4))+tf.reduce_mean(tf.abs(feature_2-feature_5))+tf.reduce_mean(tf.abs(feature_3-feature_6)))
-        else:
-            y_ = 1/3*(tf.reduce_mean(tf.square(feature_1-feature_4))+tf.reduce_mean(tf.square(feature_2-feature_5))+tf.reduce_mean(tf.square(feature_3-feature_6)))
-        assert y.shape==y_.shape
-        computed = tf.reduce_mean(y-y_)
-        _assert_allclose_according_to_type(computed,0.0)
-    if reduction == tf.keras.losses.Reduction.SUM:
-        if mode == "L1":
-            y_ = 1/3*(tf.reduce_mean(tf.abs(feature_1-feature_4))+tf.reduce_mean(tf.abs(feature_2-feature_5))+tf.reduce_mean(tf.abs(feature_3-feature_6)))
-        else:
-            y_ = 1/3*(tf.reduce_mean(tf.square(feature_1-feature_4))+tf.reduce_mean(tf.square(feature_2-feature_5))+tf.reduce_mean(tf.square(feature_3-feature_6)))
-        assert y.shape==y_.shape
-        computed = tf.reduce_mean(y/(n*B)-y_)
-        _assert_allclose_according_to_type(computed,0.0)
-    if reduction == tf.keras.losses.Reduction.NONE:
-        assert y.shape==(n,B)
+    y = loss(y_true,y_pred,sample_weight=[1,1])
+    if mode == "L1":
+        y_ = tf.reduce_mean(tf.abs(y_true-y_pred))
+    else:
+        y_ = tf.reduce_mean(tf.square(y_true-y_pred))
+    assert y.shape==[B]
+    computed = tf.reduce_mean(y-y_)
+    _assert_allclose_according_to_type(computed,0.0)
+  
 
 @pytest.mark.parametrize("mode", ["L1","L2"])
 @pytest.mark.parametrize("reduction", [tf.keras.losses.Reduction.AUTO,tf.keras.losses.Reduction.NONE,tf.keras.losses.Reduction.SUM,tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE])
@@ -285,20 +311,11 @@ def test_MeanFeatureReconstructionError_sample_weight(mode,reduction):
     tf.keras.utils.set_random_seed(1)
     tf.config.experimental.enable_op_determinism()
     loss = MeanFeatureReconstructionError(mode=mode,reduction=reduction)
-    feature_1 = tf.random.normal(shape=[2,8,8,3])
-    feature_2 = tf.random.normal(shape=[2,8,8,4])
-    feature_3 = tf.random.normal(shape=[2,8,8,5])
-    feature_4 = tf.random.normal(shape=[2,8,8,3])
-    feature_5 = tf.random.normal(shape=[2,8,8,4])
-    feature_6 = tf.random.normal(shape=[2,8,8,5])
-    y_true = [feature_1,feature_2,feature_3]
-    y_pred = [feature_4,feature_5,feature_6]
-    n = 3
+    y_true = tf.random.normal(shape=[2,8,8,3])
+    y_pred = tf.random.normal(shape=[2,8,8,3])
     B = 2 
     shape_list = [[],
-                  [n],[1],
-                  [n,1],[1,B],[1,1],[n,B],
-                  [n,1,1],[1,B,1],[1,1,1],[n,B,1]
+                  [B],[1],
                 ]
     for shape in shape_list:
         sample_weight = tf.ones(shape=shape)
@@ -309,20 +326,11 @@ def test_MeanFeatureReconstructionError_sample_weight(mode,reduction):
         loss(y_true,y_pred,sample_weight)
         sample_weight = tf.random.uniform(shape=shape)
         loss(y_true,y_pred,sample_weight)
-    feature_1 = tf.random.normal(shape=[7,8,8,8,3])
-    feature_2 = tf.random.normal(shape=[7,8,8,8,4])
-    feature_3 = tf.random.normal(shape=[7,8,8,8,5])
-    feature_4 = tf.random.normal(shape=[7,8,8,8,3])
-    feature_5 = tf.random.normal(shape=[7,8,8,8,4])
-    feature_6 = tf.random.normal(shape=[7,8,8,8,5])
-    y_true = [feature_1,feature_2,feature_3]
-    y_pred = [feature_4,feature_5,feature_6]
-    n = 3
+    y_true = tf.random.normal(shape=[7,8,8,3])
+    y_pred = tf.random.normal(shape=[7,8,8,3])
     B = 7
     shape_list = [[],
-                  [n],[1],
-                  [n,1],[1,B],[1,1],[n,B],
-                  [n,1,1],[1,B,1],[1,1,1],[n,B,1]
+                  [B],[1],
                 ]
     for shape in shape_list:
         sample_weight = tf.ones(shape=shape)
@@ -341,27 +349,16 @@ def test_MeanFeatureReconstructionError_from_config(mode,reduction):
     tf.config.experimental.enable_op_determinism()
     loss = MeanFeatureReconstructionError(mode=mode,reduction=reduction)
     loss_ = MeanFeatureReconstructionError.from_config(loss.get_config())
-    feature_1 = tf.random.normal(shape=[2,8,8,3])
-    feature_2 = tf.random.normal(shape=[2,8,8,4])
-    feature_3 = tf.random.normal(shape=[2,8,8,5])
-    feature_4 = tf.random.normal(shape=[2,8,8,3])
-    feature_5 = tf.random.normal(shape=[2,8,8,4])
-    feature_6 = tf.random.normal(shape=[2,8,8,5])
-    y_true = [feature_1,feature_2,feature_3]
-    y_pred = [feature_4,feature_5,feature_6]
+
+    y_true = tf.random.normal(shape=[2,8,8,3])
+    y_pred = tf.random.normal(shape=[2,8,8,3])
     y = loss(y_true,y_pred)
     y_ = loss_(y_true,y_pred)
     assert y.shape==y_.shape
     computed = tf.reduce_mean(y-y_)
     _assert_allclose_according_to_type(computed,0.0)
-    feature_1 = tf.random.normal(shape=[7,8,8,8,3])
-    feature_2 = tf.random.normal(shape=[7,8,8,8,4])
-    feature_3 = tf.random.normal(shape=[7,8,8,8,5])
-    feature_4 = tf.random.normal(shape=[7,8,8,8,3])
-    feature_5 = tf.random.normal(shape=[7,8,8,8,4])
-    feature_6 = tf.random.normal(shape=[7,8,8,8,5])
-    y_true = [feature_1,feature_2,feature_3]
-    y_pred = [feature_4,feature_5,feature_6]
+    y_true = tf.random.normal(shape=[7,8,8,3])
+    y_pred = tf.random.normal(shape=[7,8,8,3])
     y = loss(y_true,y_pred)
     y_ = loss_(y_true,y_pred)
     assert y.shape==y_.shape
@@ -375,84 +372,36 @@ def test_MeanStyleReconstructionError_accuracy(data_format,reduction):
     tf.keras.utils.set_random_seed(1)
     tf.config.experimental.enable_op_determinism()
     loss = MeanStyleReconstructionError(data_format=data_format,reduction=reduction)
-    feature_1 = tf.random.normal(shape=[2,8,8,6])
-    feature_2 = tf.random.normal(shape=[2,8,8,7])
-    feature_3 = tf.random.normal(shape=[2,8,8,8])
-    feature_4 = tf.random.normal(shape=[2,8,8,6])
-    feature_5 = tf.random.normal(shape=[2,8,8,7])
-    feature_6 = tf.random.normal(shape=[2,8,8,8])
-    y_true = [feature_1,feature_2,feature_3]
-    y_pred = [feature_4,feature_5,feature_6]
-    n = 3
+    y_true = tf.random.normal(shape=[2,40,40,4])
+    y_pred = tf.random.normal(shape=[2,40,40,4])
     B = 2 
-    y = loss(y_true,y_pred,sample_weight=[1,1,1])
-    if reduction in [tf.keras.losses.Reduction.AUTO,tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE]:
-        if data_format == "channels_first":
-            perm = [0,2,3,1]
-        else:
-            perm = [0,1,2,3]
+    y = loss(y_true,y_pred,sample_weight=[1,1])
+    if data_format == "channels_first":
+        perm = [0,2,3,1]
+        y_ = tf.reduce_mean(style_diff_2D(tf.transpose(y_true,perm=perm),tf.transpose(y_pred,perm=perm)))
+    else:
+        y_ = tf.reduce_mean(style_diff_2D(y_true,y_pred))
+    
+    assert y.shape==[B]
+    computed = tf.reduce_mean(y-y_)
+    _assert_allclose_according_to_type(computed,0.0)
 
-        buf = []
-        for x1,x2 in zip(y_true,y_pred):
-            buf.append(style_diff_2D(tf.transpose(x1,perm=perm),tf.transpose(x2,perm=perm)))
-        y_ = tf.reduce_mean(buf)
-        assert y.shape==y_.shape
-        computed = tf.reduce_mean(y-y_)
-        _assert_allclose_according_to_type(computed,0.0)
-    if reduction == tf.keras.losses.Reduction.SUM:
-        if data_format == "channels_first":
-            perm = [0,2,3,1]
-        else:
-            perm = [0,1,2,3]
-
-        buf = []
-        for x1,x2 in zip(y_true,y_pred):
-            buf.append(style_diff_2D(tf.transpose(x1,perm=perm),tf.transpose(x2,perm=perm)))
-        y_ = tf.reduce_mean(buf)
-        assert y.shape==y_.shape
-        computed = tf.reduce_mean(y/(n*B)-y_)
-        _assert_allclose_according_to_type(computed,0.0)
-    if reduction == tf.keras.losses.Reduction.NONE:
-        assert y.shape==(n,B)
-    feature_1 = tf.random.normal(shape=[2,8,8,8,6])
-    feature_2 = tf.random.normal(shape=[2,8,8,8,7])
-    feature_3 = tf.random.normal(shape=[2,8,8,8,8])
-    feature_4 = tf.random.normal(shape=[2,8,8,8,6])
-    feature_5 = tf.random.normal(shape=[2,8,8,8,7])
-    feature_6 = tf.random.normal(shape=[2,8,8,8,8])
-    y_true = [feature_1,feature_2,feature_3]
-    y_pred = [feature_4,feature_5,feature_6]
-    n = 3
+    tf.keras.utils.set_random_seed(1)
+    tf.config.experimental.enable_op_determinism()
+    y_true = tf.random.normal(shape=[2,16,16,16,3])
+    y_pred = tf.random.normal(shape=[2,16,16,16,3])
     B = 2 
-    y = loss(y_true,y_pred,sample_weight=[1,1,1])
-    if reduction in [tf.keras.losses.Reduction.AUTO,tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE]:
-        if data_format == "channels_first":
-            perm = [0,2,3,4,1]
-        else:
-            perm = [0,1,2,3,4]
-
-        buf = []
-        for x1,x2 in zip(y_true,y_pred):
-            buf.append(style_diff_3D(tf.transpose(x1,perm=perm),tf.transpose(x2,perm=perm)))
-        y_ = tf.reduce_mean(buf)
-        assert y.shape==y_.shape
-        computed = tf.reduce_mean(y-y_)
-        _assert_allclose_according_to_type(computed,0.0)
-    if reduction == tf.keras.losses.Reduction.SUM:
-        if data_format == "channels_first":
-            perm = [0,2,3,4,1]
-        else:
-            perm = [0,1,2,3,4]
-
-        buf = []
-        for x1,x2 in zip(y_true,y_pred):
-            buf.append(style_diff_3D(tf.transpose(x1,perm=perm),tf.transpose(x2,perm=perm)))
-        y_ = tf.reduce_mean(buf)
-        assert y.shape==y_.shape
-        computed = tf.reduce_mean(y/(n*B)-y_)
-        _assert_allclose_according_to_type(computed,0.0)
-    if reduction == tf.keras.losses.Reduction.NONE:
-        assert y.shape==(n,B)
+    y = loss(y_true,y_pred,sample_weight=[1,1])
+    if data_format == "channels_first":
+        perm = [0,2,3,4,1]
+        y_ = tf.reduce_mean(style_diff_3D(tf.transpose(y_true,perm=perm),tf.transpose(y_pred,perm=perm)))
+    else:
+        y_ = tf.reduce_mean(style_diff_3D(y_true,y_pred))
+   
+    assert y.shape==[B]
+    computed = tf.reduce_mean(y-y_)
+    _assert_allclose_according_to_type(computed,0.0)
+  
 
 @pytest.mark.parametrize("data_format", ["channels_last","channels_first"])
 @pytest.mark.parametrize("reduction", [tf.keras.losses.Reduction.AUTO,tf.keras.losses.Reduction.NONE,tf.keras.losses.Reduction.SUM,tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE])
@@ -460,20 +409,11 @@ def test_MeanStyleReconstructionError_sample_weight(data_format,reduction):
     tf.keras.utils.set_random_seed(1)
     tf.config.experimental.enable_op_determinism()
     loss = MeanStyleReconstructionError(data_format=data_format,reduction=reduction)
-    feature_1 = tf.random.normal(shape=[2,8,8,3])
-    feature_2 = tf.random.normal(shape=[2,8,8,4])
-    feature_3 = tf.random.normal(shape=[2,8,8,5])
-    feature_4 = tf.random.normal(shape=[2,8,8,3])
-    feature_5 = tf.random.normal(shape=[2,8,8,4])
-    feature_6 = tf.random.normal(shape=[2,8,8,5])
-    y_true = [feature_1,feature_2,feature_3]
-    y_pred = [feature_4,feature_5,feature_6]
-    n = 3
+    y_true = tf.random.normal(shape=[2,8,8,3])
+    y_pred = tf.random.normal(shape=[2,8,8,3])
     B = 2 
     shape_list = [[],
-                  [n],[1],
-                  [n,1],[1,B],[1,1],[n,B],
-                  [n,1,1],[1,B,1],[1,1,1],[n,B,1]
+                  [B],[1],
                 ]
     for shape in shape_list:
         sample_weight = tf.ones(shape=shape)
@@ -485,20 +425,11 @@ def test_MeanStyleReconstructionError_sample_weight(data_format,reduction):
         sample_weight = tf.random.uniform(shape=shape)
         loss(y_true,y_pred,sample_weight)
 
-    feature_1 = tf.random.normal(shape=[7,8,8,8,3])
-    feature_2 = tf.random.normal(shape=[7,8,8,8,4])
-    feature_3 = tf.random.normal(shape=[7,8,8,8,5])
-    feature_4 = tf.random.normal(shape=[7,8,8,8,3])
-    feature_5 = tf.random.normal(shape=[7,8,8,8,4])
-    feature_6 = tf.random.normal(shape=[7,8,8,8,5])
-    y_true = [feature_1,feature_2,feature_3]
-    y_pred = [feature_4,feature_5,feature_6]
-    n = 3
+    y_true = tf.random.normal(shape=[7,8,8,8,3])
+    y_pred = tf.random.normal(shape=[7,8,8,8,3])
     B = 7
     shape_list = [[],
-                  [n],[1],
-                  [n,1],[1,B],[1,1],[n,B],
-                  [n,1,1],[1,B,1],[1,1,1],[n,B,1]
+                  [B],[1],
                 ]
     for shape in shape_list:
         sample_weight = tf.ones(shape=shape)
@@ -518,28 +449,16 @@ def test_MeanStyleReconstructionError_from_config(data_format,reduction):
     loss = MeanStyleReconstructionError(data_format=data_format,reduction=reduction)
     
     loss_ = MeanStyleReconstructionError.from_config(loss.get_config())
-    feature_1 = tf.random.normal(shape=[2,8,8,3])
-    feature_2 = tf.random.normal(shape=[2,8,8,4])
-    feature_3 = tf.random.normal(shape=[2,8,8,5])
-    feature_4 = tf.random.normal(shape=[2,8,8,3])
-    feature_5 = tf.random.normal(shape=[2,8,8,4])
-    feature_6 = tf.random.normal(shape=[2,8,8,5])
-    y_true = [feature_1,feature_2,feature_3]
-    y_pred = [feature_4,feature_5,feature_6]
+    y_true = tf.random.normal(shape=[2,8,8,3])
+    y_pred = tf.random.normal(shape=[2,8,8,3])
     y = loss(y_true,y_pred)
     y_ = loss_(y_true,y_pred)
     assert y.shape==y_.shape
     computed = tf.reduce_mean(y-y_)
     _assert_allclose_according_to_type(computed,0.0)
 
-    feature_1 = tf.random.normal(shape=[7,8,8,8,3])
-    feature_2 = tf.random.normal(shape=[7,8,8,8,4])
-    feature_3 = tf.random.normal(shape=[7,8,8,8,5])
-    feature_4 = tf.random.normal(shape=[7,8,8,8,3])
-    feature_5 = tf.random.normal(shape=[7,8,8,8,4])
-    feature_6 = tf.random.normal(shape=[7,8,8,8,5])
-    y_true = [feature_1,feature_2,feature_3]
-    y_pred = [feature_4,feature_5,feature_6]
+    y_true = tf.random.normal(shape=[7,8,8,8,3])
+    y_pred = tf.random.normal(shape=[7,8,8,8,3])
     y = loss(y_true,y_pred)
     y_ = loss_(y_true,y_pred)
     assert y.shape==y_.shape

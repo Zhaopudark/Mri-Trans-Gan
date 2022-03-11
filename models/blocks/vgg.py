@@ -16,6 +16,7 @@ sys.path.append(os.path.join(base,'../../'))
 from models.craft.convolutions.conv2d import Conv2DVgg
 from models.craft.convolutions.conv3d import Vgg2Conv3D
 from models.craft.denses import DenseVgg
+from training.losses._image_losses import LossAcrossListWrapper
 from training.losses._image_losses import MeanFeatureReconstructionError
 from training.losses._image_losses import MeanStyleReconstructionError
 from training.losses._image_losses import MeanVolumeGradientError
@@ -352,11 +353,13 @@ class PerceptualLossExtractor(tf.keras.Model):
         self.valid_layer_index = valid_layer_index
         self.use_feature_reco_loss = use_feature_reco_loss
         self.use_style_reco_loss  = use_style_reco_loss
-        self.feature_reco_loss = MeanFeatureReconstructionError(mean_over_batch=True,mode="L2")
+        feature_reco_loss = MeanFeatureReconstructionError(mode="L2")
+        self.feature_reco_loss = LossAcrossListWrapper(feature_reco_loss)
         self.feature_reco_index = feature_reco_index # relu3_3
         self.feature_reco_sample_weight = feature_reco_sample_weight
         assert (len(self.feature_reco_index)==len(self.feature_reco_sample_weight))
-        self.style_reco_loss = MeanStyleReconstructionError(mean_over_batch=True,data_format="channels_last")
+        style_reco_loss = MeanStyleReconstructionError(data_format="channels_last")
+        self.style_reco_loss = LossAcrossListWrapper(style_reco_loss)
         self.style_reco_index = style_reco_index # relu1_2 relu2_2 relu3_3 relu4_3
         self.style_reco_sample_weight = style_reco_sample_weight
         assert (len(self.style_reco_index)==len(self.style_reco_sample_weight))

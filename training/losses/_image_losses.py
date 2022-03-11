@@ -3,6 +3,13 @@
 计算时对batch 维度独立
 返回时按照需求返回 默认在batch维度取均值
 一般的 求导永远是对无维度的单值loss求导
+ So, in this class, it is not appropriate to consider rightmost first. The broadcast method should be:
+            Starting with the heading (i.e. leftmost) dimensions and works its way right. In the backend of keras.losses.Loss,
+            the broadcast behavior of sample_weight follows:
+                1. Squeezes or expands `last` dim of `sample_weight` if its rank differs by 1
+                from the new rank of temp_loss.(`last` dim should be 1 if squeeze it)
+                2. If `sample_weight` is scalar, it is kept scalar.
+
 """
 
 """
@@ -12,6 +19,7 @@
 import sys
 import os
 import logging
+import copy
 from typeguard import typechecked
 import numpy as np 
 import tensorflow as tf
@@ -22,6 +30,34 @@ __all__ = [
     "MeanFeatureReconstructionError",
     "MeanStyleReconstructionError",
 ]
+
+class LossAcrossListWrapper(tf.keras.losses.Loss):
+    """Abstract wrapper base loss.
+    Wrappers take another layer and augment it in various ways.
+    """
+    @typechecked
+    def __init__(self,loss:tf.keras.losses.Loss,**kwargs):
+        self.inner_loss = loss
+        kwargs["reduction"] = tf.keras.losses.Reduction.AUTO
+        super().__init__(**kwargs)
+    def call(self,y_true,y_pred):
+        buf = []
+        for s_y_true,s_y_pred in zip(y_true,y_pred):
+            buf.append(tf.reduce_mean(self.inner_loss.call(s_y_true,s_y_pred)))
+        return buf
+
+    def get_config(self):
+        config = {'inner_loss': tf.keras.losses.serialize(self.inner_loss)}
+        base_config = super().get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        config = copy.deepcopy(config)
+        loss = tf.keras.losses.deserialize(config.pop('inner_loss'),custom_objects=custom_objects)
+        return cls(loss, **config)
+
+
 class MeanAbsoluteError(tf.keras.losses.MeanAbsoluteError):
     def __init__(self,*args,**kwargs) -> None:
         super().__init__(*args,**kwargs)
@@ -29,128 +65,112 @@ class MeanAbsoluteError(tf.keras.losses.MeanAbsoluteError):
 class MeanSquaredError(tf.keras.losses.MeanSquaredError):
     def __init__(self,*args,**kwargs) -> None:
         super().__init__(*args,**kwargs)
-
-class LossCrossListWrapper(tf.keras.losses.Loss):
-    """
-    Wraps a loss function in the `Loss` class.
-    TODO 彻底对loss 解耦 拆分成两个任务 在list上的loss 以及list中的每个的tensor loss
-    """
-    @typechecked
-    def __init__(self,mean_over_batch:bool=False,*args,**kwargs):
-        super().__init__(*args,**kwargs)
-        self.loss_kwargs = {}
-        self.loss_kwargs["mean_over_batch"] = mean_over_batch # TODO @property
-        self.mean_over_batch = mean_over_batch
-    def loss_func(self,x1,x2):
-        NotImplementedError('Must be implemented in subclasses.')
-    def call(self,y_true,y_pred):
-        buf = []
-        for x1,x2 in zip(y_true,y_pred):
-            loss_func_output = self.loss_func(x1,x2)
-            if self.mean_over_batch:
-                buf.append(tf.reduce_mean(loss_func_output)) # TODO 
-            else:
-                buf.append(loss_func_output)
-        return buf
-    def get_config(self):
-        config = {}
-        if hasattr(self,"loss_kwargs"):
-            config = {**self.loss_kwargs}     
-        base_config = super().get_config()
-        return dict(list(base_config.items()) + list(config.items()))
     
-class MeanVolumeGradientError(LossCrossListWrapper):
+class MeanVolumeGradientError(tf.keras.losses.Loss):
     """
-    MeanVolumeGradientError 
-    calculate the volume gradient error between 2 tensors  
-    give out a mean scaler 
-    sample_weight can be used to set weights.
+    Calculation Loss(MeanVolumeGradientError) between 2 tensors, y_true and y_pred
+    y_true and y_pred should in the same shape
+    consider they are N dimensions tensors in shape [B,D1,D2,...,D{N-2},C] (channels_last)
+    or [B,C,D1,D2,...,D{N-2}] (channels_first)
+    B is the real batch dimension (not broad sense batch dimension)
+    C is the channels dimension
+    D1 to D{N-2} is the meaningful dimension. 
+        If y_true is a 2D image tensor, N==4, then "D1,D2" represent the "H(height),W(weight)" dimensions.
+        If y_true is a 3D image tensor, N==5, then "D1,D2,D3" represent the "D(depth),H(height),W(weight)" dimensions.
+        ...
+    This loss func will work as the following 3 steps:
+        1. Calculate the volume_gradient on each meaningful dimension of y_true and y_pred respectively, got 2 list of tensor, volume_gradient_true and volume_gradient_pred.
+        2. Through backend loss function, calculate the loss between 2 elements from volume_gradient_true and volume_gradient_pred's corresponding position item by item, got a list of tensor, volume_gradient_error.
+            NOTE  here we give a choice to users whether use 1-norm or 2-norm as backend loss function
+        3. If given sample_weight, apply sample_weight on volume_gradient_error first. Then, reduce on volume_gradient_error.
+    
+    About shape,
+    p.s., list/tuple can be regarded as broad sense tensor.
+    Here, we specify 3 behavior about shape and shape's reduction:
+        if y_true in shape of [B,D1,D2,...,D{N-2},C] (channels_last)
+        1. prefix behaior:
+            from y_true and y_pred to get volume_gradient_true and volume_gradient_pred, in shape of [{N-2},B,D1,D2,...,D{N-2},C]
+            transpose to  [B,{N-2},D1,D2,...,D{N-2},C]
+        2. backend loss function's reduction behavior
+            by `VolumeGradient` definition, reduce meaningful dimensions, i.e., `D1,D2,...,D{N-2}` dimensions.
+            volume_gradient_error in shape of [B,{N-2},C]
+        3. sample_weight application behavior
+            sample_weight in this class represtents the weight over "B, C or {N-2}" dimensions,
+            it means giving loss results differents weighs on different batches, channels or meaningful dimensions (which dimension has larger proportion and which has less)
 
-    Consider 
-    y_true is a tensor in [B,D2,D3,D4,...,DN-1,C] or [B,C,D2,D3,D4,...,DN-1] shape
-    y_pred is the same shape as y_true
+            Sample_weight will multiply with volume_gradient_error.
 
-    First
-        define 'get_volumn_gradient' to calculate volumn gradient of each dim, except batch dimension and channel dimension.
-        for example: consider y_true in [B,D2,D3,D4,...,DN-1,C] or [B,C,D2,D3,D4,...,DN-1] shape
-            1. slice y_true to get y_true_1 on `D2` dimension, [::,0:-1:,::,...,::]
-            2. slice y_true to get y_true_2 on `D2` dimension, [::,1::,::,...,::]
-            3. y_true_2 minus y_true_1 got a tensor in shape [B,D2 - 1,D3,D4,...,D{N-1},C] or [B,C,D2 - 1,D3,D4,...,D{N-1}]
-            4. pading the tensor to shape [B,D2,D3,D4,...,DN-1,C] or [B,C,D2,D3,D4,...,DN-1], as volumn_gradient_D2
-            5. repeat above procedure on `D3`,`D4`,...,`DN-1` dimension
-            6. gather all results to a list volumn_gradient=[volumn_gradient_D2,volumn_gradient_D3,...,volumn_gradient_D{N-1}]
+            Since sample_weight's broadcast behavior in traditional `tf.keras.losses.Loss` in very special:
+                1. In typical application, loss function's sample_weight acts as a coefficient for the loss, and losses usually conduct in 'axis=-1'. 
+                2. Squeezes or expands `last` dim of `sample_weight` if its rank differs by 1
+                from the new rank of temp_loss(volume_gradient_error).(`last` dim should be 1 if squeeze it)
+                3. If `sample_weight` is scalar, it is kept scalar.
+            Additionally a general multiply broadcast behavior follows: 
+                https://numpy.org/doc/stable/user/basics.broadcasting.html
+                It starts with the trailing (i.e. rightmost) dimensions and works its way left. Two dimensions are compatible when
+                    1. they are equal, or
+                    2. one of them is 1
+            So, if we do nothing,  sample_weight's broadcast behavior will follow `tf.keras.losses.Loss`'s constraint, it may leads problems 
+            If we give a sample_weight in shape [N-2] and wants it work on [B,{N-2},C] results. i.e., exceptions will be encountered.
 
-        axis = [1,2,...,N-2] if y_true in [B,D2,D3,D4,...,DN-1,C]  or [2,3,...,N-1] if y_true in [B,C,D2,D3,D4,...,DN-1]
-        loss_func(volumn_gradient_D2_ture,volumn_gradient_D2_pred)
-            = tf.reduce_mean(tf.square(volumn_gradient_D2_ture-volumn_gradient_D2_pred),axis=axis) # [B,C]
-        NOTE  here we give a choice to users whether use 1-norm or 2-norm
-        temp_loss = [loss_func(volumn_gradient_D2_ture,volumn_gradient_D2_pred),
-                     loss_func(volumn_gradient_D3_ture,volumn_gradient_D3_pred),
-                     ...,
-                     loss_func(volumn_gradient_D{N-1}_ture,volumn_gradient_D{N-1}_pred)]  # shape = [N-2,B,C]
-    Second 
-        Use sample_weight to give each temp_loss's volume a specific weight
-        The same as MeanFeatureReconstructionError
-        So in this class, since temp_loss has shape [N-2,B,C]
-            sample_weight' right shape is:
-                [], 
-                [N-2,B],[N-2,1],[1,B],[1,1]
-                [N-2,B,C],[N-2,1,C],[N-2,B,1],[1,B,C],[N-2,1,1],[1,B,1],[1,1,C],[1,1,1]
-                [N-2,B,C,1],[N-2,1,C,1],[N-2,B,1,1],[1,B,C,1],[N-2,1,1,1],[1,B,1,1],[1,1,C,1],[1,1,1,1]
-            sample_weight' wrong shape is
-                [N-2],[B],[C] since their rank(1) differs by 2 not 1 from the new rank of temp_loss(3), and not suit temp_loss' shape [N-2,B,C] when matmul()
-                others
-        For general usage, we want to use a list of `N-2` elements to give weights for different dimension's volume gradients.
-        Unfortunately, shape [N-2] is not suit exactly since keras.losses.Loss's broadcast mechanism.
-        So, we should modify the behavior, if user give a sample_weight in rank 1, we add a dimension to it.
-    Third: 
-        Reduce weighted_loss by reduction.
-        The same as MeanFeatureReconstructionError
+            If we  prevent orginal `tf.keras.losses.Loss`'s sample_weight's broadcast behavior, manually broadcast sample_weight to [B,{N-2},C] first,
+            the  potential risk will be eliminated.
 
-    Deprecated:
-        def mgd(x,y):
-            if len(x.shape)==5:
-                dz1,dy1,dx1 = pix_gradient_3D(x)
-                dz2,dy2,dx2 = pix_gradient_3D(y)
-                return tf.reduce_mean(tf.abs(dz1-dz2))/3 + tf.reduce_mean(tf.abs(dy1-dy2))/3 + tf.reduce_mean(tf.abs(dx1-dx2))/3
-            elif len(x.shape)==4:
-                dy1,dx1 = pix_gradient_2D(x)
-                dy2,dx2 = pix_gradient_2D(y)
-                return tf.reduce_mean(tf.abs(dy1-dy2))/2 + tf.reduce_mean(tf.abs(dx1-dx2))/2
-            else:
-                raise ValueError("mgd only support for 4 dims or 5 dims.")
-        def pix_gradient_2D(img): #shape=[b,h(y),w(x),c] 计算(x, y)点dx为[I(x+1,y)-I(x, y)] 末端pad 0 
-            dx = img[:,:,1::,:]-img[:,:,0:-1,:]
-            dy = img[:,1::,:,:]-img[:,0:-1,:,:]
-            dx = tf.pad(dx,paddings=[[0,0],[0,0],[0,1],[0,0]]) # 末端pad 0
-            dy = tf.pad(dy,paddings=[[0,0],[0,1],[0,0],[0,0]]) # 末端pad 0 
-            return dy,dx
-        def pix_gradient_3D(img): #shape=[b,d(z),h(y),w(x),c] 计算(x,y,z)点dx为[I(x+1,y,z)-I(x,y,z)] 末端pad 0 
-            dx = img[:,:,:,1::,:]-img[:,:,:,0:-1,:]
-            dy = img[:,:,1::,:,:]-img[:,:,0:-1,:,:]
-            dz = img[:,1::,:,:,:]-img[:,0:-1,:,:,:]
-            dx = tf.pad(dx,paddings=[[0,0],[0,0],[0,0],[0,1],[0,0]]) # 末端pad 0
-            dy = tf.pad(dy,paddings=[[0,0],[0,0],[0,1],[0,0],[0,0]]) # 末端pad 0 
-            dz = tf.pad(dz,paddings=[[0,0],[0,1],[0,0],[0,0],[0,0]]) # 末端pad 0
-            return dz,dy,dx    
+            So, supported sample_weight shape is 
+                []
+                [C],[1],[N-2],  --> we additional make it support [N-2], beacuse MeanVolumeGradientError actually concern about the meaningful dimension
+                [N-2,C],[N-2,1],[1,C],[1,1]
+                [B,N-2,C],[B,N-2,1],[B,1,C],[1,N-2,C],[B,1,1],[1,N-2,1],[1,1,C],[1,1,1]
+
+    >>> loss = MeanVolumeGradientError()
+    >>> y_true = tf.random.normal(shape=[4,5,6])
+    >>> y_pred = tf.random.normal(shape=[4,5,6])
+    >>> y = loss(y_true,y_pred)
+    >>> print(y.shape)
+    (4, 1, 6)
+
+    >>> loss = MeanVolumeGradientError()
+    >>> y_true = tf.random.normal(shape=[4,5,7,9,6])
+    >>> y_pred = tf.random.normal(shape=[4,5,7,9,6])
+    >>> sample_weight = tf.random.uniform(shape=[4,3,6])
+    >>> y = loss(y_true,y_pred,sample_weight)
+    >>> print(y.shape)
+    (4, 3, 6)
+    
     """
     @typechecked
     def __init__(self,mode:str="L1",name:str="mean_volume_gradient_error",data_format:str="channels_last",**kwargs) -> None:
+        if "reduction" in kwargs.keys():
+            if kwargs["reduction"] != tf.keras.losses.Reduction.NONE:
+                logging.warning("""
+                    MeanVolumeGradientError will reduce output by its own reduction. 
+                    Setting `reduction` is ineffective.
+                    Output will be reduce to [B,{N-2},C] shape whether the input_shape is 
+                    [B,D1,D2,...,D{N-2},C] (channels last) or [B,C,D1,D2,...,D{N-2}] (channels first)
+                    """)
+        kwargs["reduction"] = tf.keras.losses.Reduction.NONE
         super().__init__(name=name,**kwargs)
+        self.loss_kwargs = {}
         self.loss_kwargs["mode"] = mode
         self.loss_kwargs["data_format"] = data_format
         if mode.upper() == "L1":
-            self.inner_loss = self.l1_loss
+            self.loss_func = self._l1_loss
         elif mode.upper() == "L2":
-            self.inner_loss = self.l2_loss
+            self.loss_func = self._l2_loss
         else:
             raise ValueError("MeanVolumeGradientError's inner loss mode only support in 'L1' or 'L2', not{}".format(mode))
         self.data_format = data_format.lower()
         if self.data_format not in ["channels_last","channels_first"]:
             raise ValueError("data_format should be one in 'channels_last' or'channels_first', not {}.".format(data_format))
+    def _l1_loss(self,x1,x2):
+        _axis = self._get_reduce_axis(x1)
+        return tf.reduce_mean(tf.abs(x1-x2),axis=_axis)
+    def _l2_loss(self,x1,x2): 
+        _axis = self._get_reduce_axis(x1)
+        return tf.reduce_mean(tf.square(x1-x2),axis=_axis)
     def _get_volume_gradient(self,input):
         out_buf = []
-        valid_indexs = self._get_reduce_or_norm_axis(input)
+        valid_indexs = self._get_meaningful_axes(input)
         begin = [0,]*len(input.shape)
         size = input.shape.as_list() # total volume index 0<->N-1
         paddings = [[0,0],]*len(input.shape)
@@ -171,193 +191,225 @@ class MeanVolumeGradientError(LossCrossListWrapper):
         
             diff = tf.pad(diff,paddings=_paddings)
             out_buf.append(diff) # out volume == (volume index 1<->N-1) - (volume index 0<->N-2)
-        return out_buf
-    def _get_reduce_or_norm_axis(self,x):
+        return tf.stack(out_buf,axis=1)
+    def _get_meaningful_axes(self,x): # indicate `D1,D2,...,D{N-2}`
         rank = len(x.shape)-2
         assert rank>=0
         if self.data_format == "channels_last":
             return list(range(len(x.shape)))[1:-1:]
-        elif self.data_format == "channels_first":
-            return list(range(len(x.shape)))[2::]
         else:
-            raise ValueError("data_format should be one in 'channels_last' or'channels_first', not {}.".format(self.data_format))
-    def l1_loss(self,x1,x2):
-        _axis = self._get_reduce_or_norm_axis(x1)
-        return tf.reduce_mean(tf.abs(x1-x2),axis=_axis)
-    def l2_loss(self,x1,x2): 
-        _axis = self._get_reduce_or_norm_axis(x1)
-        return tf.reduce_mean(tf.square(x1-x2),axis=_axis)
-    def loss_func(self,x1,x2):
-        return self.inner_loss(x1,x2)
+            return list(range(len(x.shape)))[2::]
+    def _get_reduce_axis(self,x): # indicate `{N-2},D1,D2,...,D{N-2}`
+        rank = len(x.shape)-2
+        assert rank>=0
+        if self.data_format == "channels_last":
+            return list(range(len(x.shape)))[2:-1:] # indicate`D1,D2,...,D{N-2}` in [B,{N-2},D1,D2,...,D{N-2},C]
+        else:
+            return list(range(len(x.shape)))[3::] # indicate`D1,D2,...,D{N-2}` in [B,{N-2},C,D1,D2,...,D{N-2}]
+    def _expand_or_squeeze_sample_weight(self,y_true,y_pred,sample_weight=None):
+        if sample_weight is not None:
+            sample_weight = tf.convert_to_tensor(sample_weight)
+            if self.data_format == "channels_last":
+                loss_shape = [y_true.shape[0],len(y_true.shape)-2,y_true.shape[-1]]
+            else:
+                loss_shape = [y_true.shape[0],len(y_true.shape)-2,y_true.shape[1]]
+            if (len(sample_weight.shape)==1) and (sample_weight.shape[0]==loss_shape[1]): # suppose it indicate `N-2` dimension
+                    sample_weight = tf.expand_dims(sample_weight,axis=0) # [1,N-2]
+                    sample_weight = tf.expand_dims(sample_weight,axis=-1) # [1,N-2,1]
+            sample_weight = tf.broadcast_to(sample_weight,shape=loss_shape) # if shape un-matched, raise error
+        else:
+            return sample_weight
     def call(self,y_true,y_pred):
         y_true_gradient = self._get_volume_gradient(y_true)
         y_pred_gradient = self._get_volume_gradient(y_pred)      
-        return super().call(y_true_gradient,y_pred_gradient)
+        return self.loss_func(y_true_gradient,y_pred_gradient)
     def __call__(self,y_true,y_pred,sample_weight=None):
-        if sample_weight is not None:
-            sample_weight = tf.convert_to_tensor(sample_weight)
-            if len(sample_weight.shape)==1:
-                sample_weight = tf.expand_dims(sample_weight,[-1])
+        sample_weight = self._expand_or_squeeze_sample_weight(y_true,y_pred,sample_weight)
         return super().__call__(y_true,y_pred,sample_weight)
-class MeanFeatureReconstructionError(LossCrossListWrapper):
+    def get_config(self):
+        config = {}
+        if hasattr(self,"loss_kwargs"):
+            config = {**self.loss_kwargs}     
+        base_config = super().get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+class MeanFeatureReconstructionError(tf.keras.losses.Loss):
     """
     see: https://arxiv.org/pdf/1603.08155.pdf
-    MeanFeatureReconstructionError 
-    calculate the error between 2 lists of feature maps 
-    give out a mean scaler 
-    sample_weight can be used to set weights.
-
-    More detailedly:
-    Consider f1, f2, ..., fn are n feature maps, they are 
-    not necessarily have same shape with each other.
-    y_true = [f1_ture,f2_ture,...,fn_ture]
-    y_pred = [f1_pred,f2_pred,...,fn_pred]
-
-    Consider f1_ture,f1_pred have N dims, i.e., the shape [B,D2,D3,D4,...,DN].
+    Calculation Loss(MeanFeatureReconstructionError) between 2 tensors (feature maps), y_true and y_pred
+    y_true and y_pred should in the same shape
+    consider they are N dimensions tensors in shape [B,D1,D2,...,D{N-1}] 
+    B is the real batch dimension (not broad sense batch dimension)
+    D1 to D{N-1} is the meaningful dimension. 
+        e.g.,
+        If in channels_last data_format
+            If y_true is a 2D image tensor, N==4, then "D1,D2,D3" represent the "H(height),W(weight),C(channels)" dimensions.
+            If y_true is a 3D image tensor, N==5, then "D1,D2,D3,D4" represent the "D(depth),H(height),W(weight),C(channels)" dimensions.
+            ...
     Since calculate the mean over batch dimension may leads to problems, here 
     we will maintain the batch dimension
     define a loss func:
         axis = [1,2,...,N-1]
-        loss_func(f1_ture,f1_pred)=tf.reduce_mean(tf.square(f1_ture-f1_pred),axis=axis) # shape = [B]
+        loss_func(y_true,y_pred)=tf.reduce_mean(tf.square(y_true-y_pred),axis=axis) # shape = [B]
         NOTE some papers use 1-norm when practice, so here we give a choice to users.
             such as https://ieeexplore.ieee.org/abstract/document/8653423
-    First:
-        temp_loss = [loss_func(f1_ture,f1_pred),loss_func(f2_ture,f2_pred),...,loss_func(fn_ture,fn_pred)]  # shape = [n,B]
-    Second:
-        Use sample_weight to give each temp_loss's volume a specific weight
-        sample_weight shold be a list, tuple or tensor and have the shape that can be broadcast to temp_loss's shape,
-            NOTE 1. In typical application, loss function's sample_weight acts as a coefficient for the loss, and losses usually
-            conduct in 'axis=-1'. 
-            2. Ususally, broadcast follows 
-            https://numpy.org/doc/stable/user/basics.broadcasting.html
-            It starts with the trailing (i.e. rightmost) dimensions and works its way left. Two dimensions are compatible when
-                1. they are equal, or
-                2. one of them is 1
-            3. So, in loss computation, it is not appropriate to consider rightmost first. The broadcast method should be:
-            Starting with the heading (i.e. leftmost) dimensions and works its way right. In the backend of keras.losses.Loss,
-            the broadcast behavior of sample_weight follows:
-                1. Squeezes or expands `last` dim of `sample_weight` if its rank differs by 1
-                from the new rank of temp_loss.(`last` dim should be 1 if squeeze it)
-                2. If `sample_weight` is scalar, it is kept scalar.
-            So in this class, since  temp_loss has shape [n,B]
-                sample_weight' right shape is:
-                    [], 
-                    [n], [1], 
-                    [n,1], [1,B], [1,1], [n,B]
-                    [n,1,1], [1,B,1], [1,1,1], [n,B,1]
-                sample_weight' wrong shape is
-                    [B] since it will expanded to [B,1] but not suit temp_loss' shape [n,B] when matmul()
-                    others
-            For general usage, we want to use a list of `n` elements to give weights for different feature maps.
-            Luckly, with the help of keras.losses.Loss's sample_weight broadcast behavior, we can exactly use the 
-            the `n` elements list to achieve our goal, without any tweaking, even though this mechanism 
-            is designed for "BATCH" originally.
-        if give sample_weight: 
-            weighted_loss = temp_loss*sample_weight,axis=0 # [n,B]
-        if no sample_weight:
-            weighted_loss = temp_loss,axis=0 # [B]
-            or consider sample_weight is '1' in each dim
-            weighted_loss = temp_loss*tf.ones_like(temp_loss) # [n,B]
-    Third: 
-        Reduce weighted_loss by reduction. This procedure can not be totally controlled by user.
-        NOTE In general practice, weighted_loss is not "[n,B]" in shape, but "[B,D2,D3,D4,...,DN-1]".
-            Then, if reduction is None,
-                    reduced_weighted_loss will in shape "[B,D2,D3,D4,...,DN-1]"
-                if reduction is AUTO/SUM/SUM_OVER_BATCH_SIZE
-                    reduced_weighted_loss will in shape "[]"
-        So, if weighted_loss is  "[n,B]" in shape:
-            if reduction is None,
-                reduced_weighted_loss will in shape "[n,B]"
-            if reduction is AUTO/SUM/SUM_OVER_BATCH_SIZE
-                reduced_weighted_loss will in shape "[]"
-        So, in this class, we finally cannot got ideal output with shape "[B]", if just inherit from tf.keras.losses.Loss.
-        TODO  Make this class maintain batch dimension and leave the decision of reduction to users. This problem does not influence traditional usage, since we usually
-        consider "Feature Reconstruction Loss" when batch size set to 1
-    a target feature map X of shape [H,W,C]
-    a current feature map X_ of shape [H,W,C]
+
+    This loss func will work as the following 2 steps:
+        1. Calculate the difference of y_true and y_pred, representing their "Feature Difference":
+        2. Through backend loss function, calculate the loss between "Feature Difference".
+            NOTE here we give a choice to users whether use 1-norm or 2-norm as backend loss function
+        3. If given sample_weight, apply sample_weight on loss results first. Then, reduce on loss results.
+    About shape,
+    p.s., list/tuple can be regarded as broad sense tensor.
+    Here, we specify 3 behavior about shape and shape's reduction:
+        if y_true in shape of [B,D1,D2,...,D{N-1}]
+        1. from y_true and y_pred to get tf.square(y_true-y_pred) or tf.abs(y_true-y_pred)
+           matain the shape [B,D1,D2,...,D{N-1}]
+        2. tf.reduce_mean(), reduce and mean on  `D1,D2,...,D{N-1}` dimensions, got a [B] shape tensor 
+        3. sample_weight application behavior
+            the same as MeanVolumeGradientError
+            sample_weight in this class represtents the weight over "B" dimensions,
+            it means giving loss results differents weighs on different batches
+            So, supported sample_weight shape is 
+                []
+                [B],[1],  
+            There is no need to broadcast  sample_weight manually.
+
+    >>> loss = MeanFeatureReconstructionError()
+    >>> y_true = tf.random.normal(shape=[4,5,6])
+    >>> y_pred = tf.random.normal(shape=[4,5,6])
+    >>> y = loss(y_true,y_pred)
+    >>> print(y.shape)
+    (4,)
+
+    >>> loss = MeanFeatureReconstructionError()
+    >>> y_true = tf.random.normal(shape=[4,5,7,9,6])
+    >>> y_pred = tf.random.normal(shape=[4,5,7,9,6])
+    >>> sample_weight = tf.random.uniform(shape=[4])
+    >>> y = loss(y_true,y_pred,sample_weight)
+    >>> print(y.shape)
+    (4,)
     
     """
     @typechecked
     def __init__(self,mode:str="L1",name:str="mean_feat_reco_error",**kwargs) -> None:
+        if "reduction" in kwargs.keys():
+            if kwargs["reduction"] != tf.keras.losses.Reduction.NONE:
+                logging.warning(
+                    """
+                    MeanFeatureReconstructionError will reduce output by its own reduction. 
+                    Setting `reduction` is ineffective.
+                    Output will be reduce to [B] shape always.               
+                    """)
+        kwargs["reduction"] = tf.keras.losses.Reduction.NONE
         super().__init__(name=name,**kwargs)
+        self.loss_kwargs = {}
         self.loss_kwargs["mode"] = mode
         if mode.upper() == "L1":
-            self.inner_loss = self.l1_loss
+            self.loss_func = self._l1_loss
         elif mode.upper() == "L2":
-            self.inner_loss = self.l2_loss
+            self.loss_func = self._l2_loss
         else:
             raise ValueError("MeanFeatureReconstructionError's inner loss mode only support in 'L1' or 'L2', not{}".format(mode))
     def _get_reduce_or_norm_axis(self,x):
         return list(range(len(x.shape)))[1::]
-    def l1_loss(self,x1,x2): # [B,x,x,x,x]
+    def _l1_loss(self,x1,x2): # [B,x,x,...]
         _axis = self._get_reduce_or_norm_axis(x1)
         return tf.reduce_mean(tf.abs(x1-x2),axis=_axis)
-    def l2_loss(self,x1,x2): # [B,x,x,x,x]
+    def _l2_loss(self,x1,x2): # [B,x,x,...]
         _axis = self._get_reduce_or_norm_axis(x1)
         return tf.reduce_mean(tf.square(x1-x2),axis=_axis)
-    def loss_func(self,x1,x2):
-        return self.inner_loss(x1,x2)
+    def call(self,y_true,y_pred):    
+        return self.loss_func(y_true,y_pred)
+    def get_config(self):
+        config = {}
+        if hasattr(self,"loss_kwargs"):
+            config = {**self.loss_kwargs}     
+        base_config = super().get_config()
+        return dict(list(base_config.items()) + list(config.items()))
 
-class MeanStyleReconstructionError(LossCrossListWrapper):
+
+class MeanStyleReconstructionError(tf.keras.losses.Loss):
     """
     see: https://arxiv.org/pdf/1603.08155.pdf
-    MeanStyleReconstructionError 
-    calculate the style error between 2 lists of feature maps 
-    give out a mean scaler 
-    sample_weight can be used to set weights
+    Calculation Loss(MeanStyleReconstructionError) between 2 tensors (feature maps), y_true and y_pred
+    y_true and y_pred should in the same shape
 
-    More detailedly:
-    Consider f1, f2, ..., fn are n feature maps, they are 
-    not necessarily have same shape with each other.
-    y_true = [f1_ture,f2_ture,...,fn_ture]
-    y_pred = [f1_pred,f2_pred,...,fn_pred]
+    Consider they are N dimensions tensors in shape [B,D1,D2,...,D{N-2},C] (channels_last) or [B,C,D1,D2,...,D{N-2}] (channels_first)
+    B is the real batch dimension (not broad sense batch dimension)
+    C is the channels dimension
+    D1 to D{N-2} is the meaningful dimension. 
+        If y_true is a 2D image tensor, N==4, then "D1,D2" represent the "H(height),W(weight)" dimensions.
+        If y_true is a 3D image tensor, N==5, then "D1,D2,D3" represent the "D(depth),H(height),W(weight)" dimensions.
+        ...
 
-    Consider f1_ture,f1_pred have N dims, i.e., the shape 
-    [B,D2,D3,D4,...,DN-1,C]  # data_format = channels_last 
-    or [B,C,D2,D3,D4,...,DN-1]  # data_format = channels_first
-    
     Since calculate the mean over batch dimension may leads to problems, here 
-    we will maintain the batch dimension.
-    First
-        define 'get_gram_matrix' to calculate Gram Matrix of each feature, representing 'style'
-        for example: consider f1_ture in [B,D2,D3,D4,...,DN-1,C] or [B,C,D2,D3,D4,...,DN-1] shape
-            1. reshape f1_ture to [B,-1,C] or [B,C,-1]
-            2. matmul f1_ture and f1_ture.T in last 2 dimension got shape [B,C,C]
-            3. divive the matmuled result by total volume nums over all dims, except batch dim
-        loss_func(f1_ture,f1_pred)=
-            tf.suqare(
-                tf.norm(
-                    get_gram_matrix(f1_ture)-get_gram_matrix(f1_pred),
-                    ord="fro",
-                    axis=[-2,-1])) # [B]
-        NOTE if we consider f1_ture a 'ones' tensor the shape [B,D2,D3,D4,...,DN-1,C] or [B,C,D2,D3,D4,...,DN-1]
-        Then, get_gram_matrix(f1_ture) will give out a tensor in [B,C,C], each element is 1/C 
+    we will maintain the batch dimension
+    define a loss func:
+        loss_func(y_true,y_pred)=tf.suqare(tf.norm(get_gram_matrix(y_ture)-get_gram_matrix(y_pred),ord="fro",axis=[-2,-1])) # [B]
+    It is difficult to understand, so here is the explaination:
+
+    This loss func will work as the following 3 steps:
+        1. Calculate the Gram Matrix of y_true and y_pred by get_gram_matrix() function, representing their 'style':
+            for example: consider y_true in [B,D1,D3,D4,...,D{N-1},C] or [B,C,D1,D3,D4,...,D{N-1}] shape
+                1. reshape y_true to [B,-1,C] or [B,C,-1]
+                2. matmul y_true and y_true.T in last 2 dimension got shape [B,C,C]
+                3. divive the matmuled result by total volume nums over all dimensions, except batch dimension
+        2. Through backend loss function, calculate the loss of Gram Matrix difference of y_ture and y_pred.
+            tf.suqare(tf.norm()) is the backend loss function, i.e., square of `Matrix F-norm`
+        3. If given sample_weight, apply sample_weight on loss results first. Then, reduce on loss results.
+        
+        NOTE if we consider y_true a `Ones` tensor in shape [B,D1,D3,D4,...,D{N-1},C] or [B,C,D1,D3,D4,...,D{N-1}]
+        Then, get_gram_matrix(y_true) will give out a tensor in [B,C,C], each element is 1/C 
         and then, tf.suqare(tf.norm(·)) will give out a tensor in [B],each element is (1/c**2+1/C**2+...+1/C**2) == 1
         So the mean `energy` of each point isn't changed after style difference calculation, i.e., mean `energy` is not affected by the number of volumes
-        temp_loss = [loss_func(f1_ture,f1_pred),loss_func(f2_ture,f2_pred),...,loss_func(fn_ture,fn_pred)]  # shape = [n,B] 
-    Second 
-        Use sample_weight to give each temp_loss's volume a specific weight
-        The same as MeanFeatureReconstructionError
-        So in this class, since  temp_loss has shape [n,B]
-            sample_weight' right shape is:
-                [], 
-                [n], [1], 
-                [n,1], [1,B], [1,1], [n,B]
-                [n,1,1], [1,B,1], [1,1,1], [n,B,1]
-            sample_weight' wrong shape is
-                [B] since it will expanded to [B,1] but not suit temp_loss' shape [n,B] when matmul()
-                others
-        For general usage, we want to use a list of `n` elements to give weights for different feature maps (gram matrices).
-        Luckly, with the help of keras.losses.Loss's sample_weight broadcast behavior, we can exactly use the 
-        the `n` elements list to achieve our goal, without any tweaking, even though this mechanism 
-        is designed for "BATCH" originally.
-    Third: 
-        Reduce weighted_loss by reduction.
-        The same as MeanFeatureReconstructionError
+
+    About shape,
+    p.s., list/tuple can be regarded as broad sense tensor.
+    Here, we specify 3 behavior about shape and shape's reduction:
+        if y_true in shape of [B,D1,D2,...,D{N-1},C] or [B,C,D1,D3,D4,...,D{N-1}]
+        1. get the Gram Matrix
+           make the results in shape [B,C,C]
+        2. square of `Matrix F-norm`
+           reduce and nrom on  `C,C` dimensions, got a [B] shape tensor 
+        3. sample_weight application behavior
+            the same as MeanVolumeGradientError
+            sample_weight in this class represtents the weight over "B" dimensions,
+            it means giving loss results differents weighs on different batches
+            So, supported sample_weight shape is 
+                []
+                [B],[1],  
+            There is no need to broadcast  sample_weight manually.
+
+    >>> loss = MeanStyleReconstructionError()
+    >>> y_true = tf.random.normal(shape=[4,5,6])
+    >>> y_pred = tf.random.normal(shape=[4,5,6])
+    >>> y = loss(y_true,y_pred)
+    >>> print(y.shape)
+    (4,)
+
+    >>> loss = MeanStyleReconstructionError()
+    >>> y_true = tf.random.normal(shape=[4,5,7,9,6])
+    >>> y_pred = tf.random.normal(shape=[4,5,7,9,6])
+    >>> sample_weight = tf.random.uniform(shape=[4])
+    >>> y = loss(y_true,y_pred,sample_weight)
+    >>> print(y.shape)
+    (4,)
+
     """
     @typechecked
     def __init__(self,name:str="mean_style_reco_error",data_format:str="channels_last",**kwargs) -> None:
+        if "reduction" in kwargs.keys():
+            if kwargs["reduction"] != tf.keras.losses.Reduction.NONE:
+                logging.warning(
+                    """
+                    MeanStyleReconstructionError will reduce output by its own reduction. 
+                    Setting `reduction` is ineffective.
+                    Output will be reduce to [B] shape always.               
+                    """)
+        kwargs["reduction"] = tf.keras.losses.Reduction.NONE
         super().__init__(name=name,**kwargs)
+        self.loss_kwargs = {}
         self.loss_kwargs["data_format"] = data_format
         self.data_format = data_format.lower()
         if self.data_format not in ["channels_last","channels_first"]:
@@ -379,64 +431,46 @@ class MeanStyleReconstructionError(LossCrossListWrapper):
             raise ValueError("data_format should be one in 'channels_last' or'channels_first', not {}.".format(self.data_format))
         x = tf.reshape(x,_shape,name="flattened_tensor_for_gram_matrix")
         return tf.matmul(x,x,transpose_a=_transpose_a,transpose_b=_transpose_b)/_total_volume_num
-    def loss_func(self,x1,x2):
+    def call(self,x1,x2):
         x1 = self._get_gram_matrix(x1) # [B,C,C]
         x2 = self._get_gram_matrix(x2) # [B,C,C]
         return tf.square(tf.norm(x1-x2,ord="fro",axis=[-2,-1])) # [B]
+    def get_config(self):
+        config = {}
+        if hasattr(self,"loss_kwargs"):
+            config = {**self.loss_kwargs}     
+        base_config = super().get_config()
+        return dict(list(base_config.items()) + list(config.items()))
 
 if __name__ == "__main__":
     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
     tf.config.experimental.set_memory_growth(physical_devices[0], True)  
 
-
-
     tf.keras.utils.set_random_seed(1)
     tf.config.experimental.enable_op_determinism()
-    loss = MeanStyleReconstructionError()
-    feature_1 = tf.random.normal(shape=[2,8,8,3])
-    feature_2 = tf.random.normal(shape=[2,8,8,4])
-    feature_3 = tf.random.normal(shape=[2,8,8,5])
-    feature_4 = tf.random.normal(shape=[2,8,8,3])
-    feature_5 = tf.random.normal(shape=[2,8,8,4])
-    feature_6 = tf.random.normal(shape=[2,8,8,5])
+    loss1 = MeanVolumeGradientError()
+    _loss = MeanVolumeGradientError()
+    loss2 = LossAcrossListWrapper(_loss)
+
+    feature_1 = tf.random.normal(shape=[7,4,5,6,3])
+    feature_2 = tf.random.normal(shape=[7,4,5,6,4])
+    feature_3 = tf.random.normal(shape=[7,4,5,6,5])
+    feature_4 = tf.random.normal(shape=[7,4,5,6,3])
+    feature_5 = tf.random.normal(shape=[7,4,5,6,4])
+    feature_6 = tf.random.normal(shape=[7,4,5,6,5])
     y_true = [feature_1,feature_2,feature_3]
     y_pred = [feature_4,feature_5,feature_6]
-    y = loss(y_true,y_pred)
-    print(y)
+    y1 = 1/3*tf.reduce_mean(loss1(feature_1,feature_4))+ 1/3*tf.reduce_mean(loss1(feature_2,feature_5))+ 1/3*tf.reduce_mean(loss1(feature_3,feature_6))
+    y2 = loss2(y_true,y_pred)
+    computed = tf.reduce_mean(y1-y2)
+    print(computed)
+    y1 = 2/3*tf.reduce_mean(loss1(feature_1,feature_4))+ 1/3*tf.reduce_mean(loss1(feature_2,feature_5))+ 1/3*tf.reduce_mean(loss1(feature_3,feature_6))
+    y2 = loss2(y_true,y_pred,[2,1,1])
+    computed = tf.reduce_mean(y1-y2)
+    print(computed)
 
-    y_true = [feature_1,feature_2,feature_3,feature_1,feature_2,feature_3]
-    y_pred = [feature_4,feature_5,feature_6,feature_4,feature_5,feature_6]
-    y = loss(y_true,y_pred)
-    print(y)
-
-    # feature_1 = tf.stack([feature_1,feature_1],axis=1)
-    # feature_2 = tf.stack([feature_2,feature_2],axis=1)
-    # feature_3 = tf.stack([feature_3,feature_3],axis=1)
-    # feature_4 = tf.stack([feature_4,feature_4],axis=1)
-    # feature_5 = tf.stack([feature_5,feature_5],axis=1)
-    # feature_6 = tf.stack([feature_6,feature_6],axis=1)
-    # y_true = [feature_1,feature_2,feature_3]
-    # y_pred = [feature_4,feature_5,feature_6]
     # y = loss(y_true,y_pred)
     # print(y)
-
-    # feature_1 = tf.stack([feature_1,feature_1],axis=1)
-    # feature_2 = tf.stack([feature_2,feature_2],axis=1)
-    # feature_3 = tf.stack([feature_3,feature_3],axis=1)
-    # feature_4 = tf.stack([feature_4,feature_4],axis=1)
-    # feature_5 = tf.stack([feature_5,feature_5],axis=1)
-    # feature_6 = tf.stack([feature_6,feature_6],axis=1)
-    # # feature_1 = tf.transpose(feature_1,perm=[1,0,2,3,4,5])
-    # # feature_2 = tf.transpose(feature_2,perm=[1,0,2,3,4,5])
-    # # feature_3 = tf.transpose(feature_3,perm=[1,0,2,3,4,5])
-    # # feature_4 = tf.transpose(feature_4,perm=[1,0,2,3,4,5])
-    # # feature_5 = tf.transpose(feature_5,perm=[1,0,2,3,4,5])
-    # # feature_6 = tf.transpose(feature_6,perm=[1,0,2,3,4,5])
-    # y_true = [feature_1,feature_2,feature_3]
-    # y_pred = [feature_4,feature_5,feature_6]
-    # y = loss(y_true,y_pred)
-    # print(y)
-
     # print(feature_1.shape)
     # feature_1 = tf.stack([feature_1,feature_1,feature_1,feature_1],axis=1)
     # print(feature_1.shape)
