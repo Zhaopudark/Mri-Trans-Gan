@@ -43,34 +43,34 @@ def _assert_allclose_according_to_type(
 
 def mgd(x,y):
     if len(x.shape)==5:
-        dz1,dy1,dx1 = pix_gradient_3D(x)
-        dz2,dy2,dx2 = pix_gradient_3D(y)
+        dz1,dy1,dx1 = pix_gradient_3d(x)
+        dz2,dy2,dx2 = pix_gradient_3d(y)
         return tf.reduce_mean(tf.abs(dz1-dz2))/3 + tf.reduce_mean(tf.abs(dy1-dy2))/3 + tf.reduce_mean(tf.abs(dx1-dx2))/3
     elif len(x.shape)==4:
-        dy1,dx1 = pix_gradient_2D(x)
-        dy2,dx2 = pix_gradient_2D(y)
+        dy1,dx1 = pix_gradient_2d(x)
+        dy2,dx2 = pix_gradient_2d(y)
         return tf.reduce_mean(tf.abs(dy1-dy2))/2 + tf.reduce_mean(tf.abs(dx1-dx2))/2
     else:
         raise ValueError("mgd only support for 4 dims or 5 dims.")
 
 def mgdl2(x,y):
     if len(x.shape)==5:
-        dz1,dy1,dx1 = pix_gradient_3D(x)
-        dz2,dy2,dx2 = pix_gradient_3D(y)
+        dz1,dy1,dx1 = pix_gradient_3d(x)
+        dz2,dy2,dx2 = pix_gradient_3d(y)
         return tf.reduce_mean(tf.square(dz1-dz2))/3 + tf.reduce_mean(tf.square(dy1-dy2))/3 + tf.reduce_mean(tf.square(dx1-dx2))/3
     elif len(x.shape)==4:
-        dy1,dx1 = pix_gradient_2D(x)
-        dy2,dx2 = pix_gradient_2D(y)
+        dy1,dx1 = pix_gradient_2d(x)
+        dy2,dx2 = pix_gradient_2d(y)
         return tf.reduce_mean(tf.square(dy1-dy2))/2 + tf.reduce_mean(tf.square(dx1-dx2))/2
     else:
         raise ValueError("mgd only support for 4 dims or 5 dims.")
-def pix_gradient_2D(img): #shape=[b,h(y),w(x),c] 计算(x, y)点dx为[I(x+1,y)-I(x, y)] 末端pad 0 
+def pix_gradient_2d(img): #shape=[b,h(y),w(x),c] 计算(x, y)点dx为[I(x+1,y)-I(x, y)] 末端pad 0 
     dx = img[:,:,1::,:]-img[:,:,0:-1,:]
     dy = img[:,1::,:,:]-img[:,0:-1,:,:]
     dx = tf.pad(dx,paddings=[[0,0],[0,0],[0,1],[0,0]]) # 末端pad 0
     dy = tf.pad(dy,paddings=[[0,0],[0,1],[0,0],[0,0]]) # 末端pad 0 
     return dy,dx
-def pix_gradient_3D(img): #shape=[b,d(z),h(y),w(x),c] 计算(x,y,z)点dx为[I(x+1,y,z)-I(x,y,z)] 末端pad 0 
+def pix_gradient_3d(img): #shape=[b,d(z),h(y),w(x),c] 计算(x,y,z)点dx为[I(x+1,y,z)-I(x,y,z)] 末端pad 0 
     dx = img[:,:,:,1::,:]-img[:,:,:,0:-1,:]
     dy = img[:,:,1::,:,:]-img[:,:,0:-1,:,:]
     dz = img[:,1::,:,:,:]-img[:,0:-1,:,:,:]
@@ -79,24 +79,24 @@ def pix_gradient_3D(img): #shape=[b,d(z),h(y),w(x),c] 计算(x,y,z)点dx为[I(x+
     dz = tf.pad(dz,paddings=[[0,0],[0,1],[0,0],[0,0],[0,0]]) # 末端pad 0
     return dz,dy,dx   
 
-def grma_2D(x):
+def grma_2d(x):
     b,h,w,c = x.shape
     m = tf.reshape(x,[b,-1,c])
     m_T = tf.transpose(m,perm=[0,2,1])
     g = (1.0/(h*w*c))*tf.matmul(m_T,m)
     # tf.print(tf.reduce_mean(g))
     return g # [B,C,C]
-def grma_3D(x):
+def grma_3d(x):
     b,d,h,w,c = x.shape
     m = tf.reshape(x,[b,-1,c])
     m_T = tf.transpose(m,perm=[0,2,1])
     g = (1.0/(d*h*w*c))*tf.matmul(m_T,m)
     return g # [B,C,C]
-def style_diff_2D(x,y):
-    style_diff = tf.reduce_mean(tf.square(tf.norm(grma_2D(x)-grma_2D(y),ord="fro",axis=[1,2]))) # 在batch 维度取均值
+def style_diff_2d(x,y):
+    style_diff = tf.reduce_mean(tf.square(tf.norm(grma_2d(x)-grma_2d(y),ord="fro",axis=[1,2]))) # 在batch 维度取均值
     return style_diff
-def style_diff_3D(x,y):
-    style_diff = tf.reduce_mean(tf.square(tf.norm(grma_3D(x)-grma_3D(y),ord="fro",axis=[1,2]))) # 在batch 维度取均值
+def style_diff_3d(x,y):
+    style_diff = tf.reduce_mean(tf.square(tf.norm(grma_3d(x)-grma_3d(y),ord="fro",axis=[1,2]))) # 在batch 维度取均值
     return style_diff
     
 
@@ -378,9 +378,9 @@ def test_MeanStyleReconstructionError_accuracy(data_format,reduction):
     y = loss(y_true,y_pred,sample_weight=[1,1])
     if data_format == "channels_first":
         perm = [0,2,3,1]
-        y_ = tf.reduce_mean(style_diff_2D(tf.transpose(y_true,perm=perm),tf.transpose(y_pred,perm=perm)))
+        y_ = tf.reduce_mean(style_diff_2d(tf.transpose(y_true,perm=perm),tf.transpose(y_pred,perm=perm)))
     else:
-        y_ = tf.reduce_mean(style_diff_2D(y_true,y_pred))
+        y_ = tf.reduce_mean(style_diff_2d(y_true,y_pred))
     
     assert y.shape==[B]
     computed = tf.reduce_mean(y-y_)
@@ -394,9 +394,9 @@ def test_MeanStyleReconstructionError_accuracy(data_format,reduction):
     y = loss(y_true,y_pred,sample_weight=[1,1])
     if data_format == "channels_first":
         perm = [0,2,3,4,1]
-        y_ = tf.reduce_mean(style_diff_3D(tf.transpose(y_true,perm=perm),tf.transpose(y_pred,perm=perm)))
+        y_ = tf.reduce_mean(style_diff_3d(tf.transpose(y_true,perm=perm),tf.transpose(y_pred,perm=perm)))
     else:
-        y_ = tf.reduce_mean(style_diff_3D(y_true,y_pred))
+        y_ = tf.reduce_mean(style_diff_3d(y_true,y_pred))
    
     assert y.shape==[B]
     computed = tf.reduce_mean(y-y_)

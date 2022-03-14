@@ -52,8 +52,15 @@ class DualGanReconstructionLoss():
         self.sty_flag = bool(args.Sty)
         self.transfer_learning_model = PerceptualLossExtractor(
                 model_name=args.transfer_learning_model.lower(),
+                data_format="channels_last",
+                transform_high_dimension=True,
+                use_pooling=False,
                 use_feature_reco_loss=bool(self.per_flag or self.per_2d_flag),
                 use_style_reco_loss=bool(self.sty_flag),
+                feature_reco_index=[5],
+                feature_reco_sample_weight=[1],
+                style_reco_index=[2,5,9,13],
+                style_reco_sample_weight=[1,1,1,1]
                 ) # vgg16 vgg19 mobile-net
         
         #--------------------------------------------#

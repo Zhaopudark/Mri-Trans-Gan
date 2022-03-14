@@ -5,8 +5,9 @@ __all__ = [
     "Vgg16LayerBuf_V4",
 ]
 import itertools
+import logging
 from typeguard import typechecked
-from typing import List,Union,Tuple
+from typing import List,Union,Tuple,Iterable
 import functools
 import tensorflow as tf
 import numpy as np 
@@ -25,20 +26,51 @@ from training.losses._image_losses import MeanSquaredError
 import time
 
 class FeatureMapsGetter(tf.keras.Model):
+    """
+    Get feature maps of an input based on an existing linear structure model.
+    `linear structure` means we can easily locate the desired layers' feature map output by given index.
+    This class usually used when transfer leraning.
+    The two main things this class does are normalize input, making it suitable to basic model and 
+    collect feature maps as user indicates.
+
+    Args:
+        name: name
+        model_name: specify the basic linear structure model, currently, only support vgg16 and vgg19.
+        data_format: indicate input's data_format, supporting "channels_last" or "channels_first". 
+        use_pooling:
+            If False, pooling layers in basic model will be skipped when inference.
+            If True, pooling layers in basic model will be used as normal when inference.
+                Usually, if occured with huge amount of calculation, use_pooling should be True.
+        feature_maps_indicators: a 2-D tuple of integer, declare the locations (which layers' outputs) in basic model to give out feature maps
+                    e.g. feature_maps_indicators=((1,2),(1,3),(2,4)),
+                    It means we will get 3 different list of feature maps, and they will be combined into one list and outputed simultaneously.
+                    The first list of feature maps consists of basic linear structure model's 2nd (index 1) layer's output and 3rd (index 2) layer's output.
+                    The second list of feature maps consists of basic linear structure model's 2nd (index 1) layer's output and 4th (index 3) layer's output.
+                    The third list of feature maps consists of basic linear structure model's 3rd (index 2) layer's output and 5th (index 4) layer's output.
+                    Since this is 2-D tuple of integer, we can get any number of feature map lists and any number of feature maps, as long as  basic linear structure model supports.
+        other kwargs: dtype cannot be customized currently, since the basic model cannot be serialized and deserialized easily. TODO support specifying dtype.
+    """
     @typechecked
     def __init__(self,
                  name:Union[None,str]=None,
                  model_name:str="vgg16",
                  data_format:str="channels_last",
                  use_pooling:bool=False,
-                 feature_maps_indicators:Tuple=((0)),
+                 feature_maps_indicators:Tuple[Tuple,...]=((0,),),
                  **kwargs):
-       
         if name is not None:
             name = name+"_"+model_name+"_feature_maps_getter"
         else:
             name = model_name+"_feature_maps_getter"
+        if "dtype" in kwargs.keys():
+            if kwargs["dtype"] is not None:
+                logging.warning("""
+                Setting FeatureMapsGetter's dtype to a specific dtype but not `None` may fail to meet the user's expectations. Since the actually dtype should follow 
+                model's practical dtype. For numerical stability, we mandatorily set dtype to None. 
+                """)
+        kwargs["dtype"] = None
         super().__init__(name=name,**kwargs)
+
         _model_name = model_name.lower()
         if _model_name == "vgg16":
             self._model = tf.keras.applications.vgg16.VGG16(
@@ -47,22 +79,12 @@ class FeatureMapsGetter(tf.keras.Model):
                             classifier_activation='softmax'
                             )
             self._preprocess_input = functools.partial(tf.keras.applications.vgg16.preprocess_input,data_format="channels_last")
-            self._valid_layer_indexes = list(range(len(self._model.layers)))
-            self._inputs_perm_indicator = {}
-            self._inputs_perm_indicator["support_data_format"] = "channels_last"
-            self._inputs_perm_indicator["batch_index"] = 0
-            self._inputs_perm_indicator["channel_index"] = -1
-            self._inputs_perm_indicator["meaningful_indexes"] = [-3,-2,-1]
-            self._inputs_perm_indicator["reperm_target_indexes"] = [-3,-2]
-            self._inputs_perm_indicator["reperm_fixed_indexes"] = [0,-1]
-
-            input_layer_index = 0
-            pooling_layer_indexes = [3,6,10,14,18]
-            self._valid_layer_indexes.remove(input_layer_index)
-            if not use_pooling:
-                for index in pooling_layer_indexes:
-                    self._valid_layer_indexes.remove(index)
-        
+            self._model_meta_data = {}
+            self._model_meta_data["input_layer_index"] = 0
+            self._model_meta_data["pooling_layer_indexes"] = [3,6,10,14,18]
+            self._model_meta_data["forced_pooling_threshold"] = 6 
+            self._model_meta_data["supported_data_format"] = "channels_last"
+            self._model_meta_data["supported_data_shape"] = [None,None,None,3] 
         elif _model_name == "vgg19":
             self._model = tf.keras.applications.vgg19.VGG19(
                             include_top=False, weights='imagenet', input_tensor=None,
@@ -70,176 +92,198 @@ class FeatureMapsGetter(tf.keras.Model):
                             classifier_activation='softmax'
                             )
             self._preprocess_input = functools.partial(tf.keras.applications.vgg19.preprocess_input,data_format="channels_last")
-            self._valid_layer_indexes = list(range(len(self._model.layers)))
-            self._inputs_perm_indicator = {}
-            self._inputs_perm_indicator["support_data_format"] = "channels_last"
-            self._inputs_perm_indicator["batch_index"] = 0
-            self._inputs_perm_indicator["channel_index"] = -1
-            self._inputs_perm_indicator["meaningful_indexes"] = [-3,-2,-1]
-
-            input_layer_index = 0
-            pooling_layer_indexes = [3,6,10,11,16,21]
-            self._valid_layer_indexes.remove(input_layer_index)
-            if not use_pooling:
-                for index in pooling_layer_indexes:
-                    self._valid_layer_indexes.remove(index)
+            self._model_meta_data = {}
+            self._model_meta_data["input_layer_index"] = 0
+            self._model_meta_data["pooling_layer_indexes"] = [3,6,11,16,21]
+            self._model_meta_data["forced_pooling_threshold"] = 6
+            self._model_meta_data["supported_data_format"] = "channels_last"
+            self._model_meta_data["supported_data_shape"] = [None,None,None,3]
+        else:
+            raise ValueError("{} hasn't been supported currently.".format(model_name))
         self._model.trainable = False
+
+        self._additional_meta_data = {}
         self._data_format = data_format.lower() #  inputs' data_format, received by call()
-    
-        self._feature_maps_indicators = []
-        for indicator in feature_maps_indicators:
-            self._feature_maps_indicators.append(tuple(sorted(indicator)))
-        self._feature_maps_indicators = tuple(self._feature_maps_indicators)
+        self._normalize_input_data_format = self._normalize_input_data_format_wrapper(
+            self._data_format,
+            self._model_meta_data["supported_data_format"])
+            
+        self._additional_meta_data["batch_index"] = 0 # the precondition
+        if self._data_format =="channels_last":
+            self._additional_meta_data["channel_index"] = -1
+            self._additional_meta_data["reperm_target_indexes"] = [-3,-2] # H,W in [B,...,H,W,C] 
+        else:
+            self._additional_meta_data["channel_index"] = 1
+            self._additional_meta_data["reperm_target_indexes"] = [-2,-1] # H,W in [B,C,...,H,W]
+        self._additional_meta_data["reperm_fixed_indexes"] = [self._additional_meta_data["batch_index"],self._additional_meta_data["channel_index"]] # B,C
+        self._additional_meta_data["reshape_fixed_indexes"] = self._additional_meta_data["reperm_target_indexes"]+[self._additional_meta_data["channel_index"]] # H W C
+        
+        self._feature_maps_indicators,_layer_indexes_set = self._sort_indicators(feature_maps_indicators)
+        self._fused_index = max(_layer_indexes_set)
 
-        _max_layer_indexes = [max(x) if len(x)>0 else 0 for x in self._feature_maps_indicators]
-        self._fused_index = max(_max_layer_indexes)
-   
-    def _dist_feature_maps(self,tensor,layer_out_index,feature_maps_vectors):
+        use_pooling = self._check_if_forced_use_pooling(
+            concerned_index=self._fused_index,
+            threshold=self._model_meta_data["forced_pooling_threshold"],
+            use_pooling=use_pooling)
+
+        self._additional_meta_data["valid_layer_indexes"] = self._grab_valid_indexes(
+            original_indexes=list(range(len(self._model.layers))),
+            invalid_indexs=[self._model_meta_data["input_layer_index"],
+                            [] if use_pooling else self._model_meta_data["pooling_layer_indexes"]])
+
+        self._check_if_within_valid_indexes(
+            target_indexes=_layer_indexes_set ,
+            valid_indexes=self._additional_meta_data["valid_layer_indexes"])
+
+        
+    def _sort_indicators(self,indicators:Tuple[Tuple,...]):
         """
-        put a tensor to feature_maps_vectors
-        layer_out_index indicates the tensor is output by which layer, corresponding layer index
-        feature_maps_vectors is a 2D list to contain feature_maps
-        since
-            self._feature_maps_indicators is a 2D tuple of integer
-            If layer_out_index in some row of self._feature_maps_indicators,
-                it means the tensor is one of target feature map, should be recorded in feature_maps_vectors correspondingly.
+        sort indicators (a 2D tuple of integer)
+        additionally, give out a sorted set of all elements in the indicators
         """
-        for row_index in range(len(feature_maps_vectors)):
-            if layer_out_index in self._feature_maps_indicators[row_index]: # 
-                tmp_row = feature_maps_vectors[row_index][:]
+        indicators_buf = []
+        element_set = set()
+        for indicator in indicators:
+            indicators_buf.append(tuple(sorted(indicator)))
+            for item in indicator:
+                element_set.add(item)
+        return tuple(indicators_buf),sorted(element_set)
+    @typechecked
+    def _check_if_forced_use_pooling(self,concerned_index:int,threshold:int,use_pooling:bool):
+        if concerned_index >= threshold:
+            # should forced use pooling
+            if use_pooling:
+                return use_pooling
+            else:
+                logging.warning(
+                """
+                To avoid huge amount of calculation, when the index of layer, which give out wanted feature map, reaches or exceed the index threshold {},
+                the basic model will use pooling mandatorily, and `use_pooling` flag set by user will be ignored.
+                """.format(threshold))
+                return True
+        else:
+            # no need to forced use pooling
+            return use_pooling
+    @typechecked
+    def _grab_valid_indexes(self,original_indexes:List[int],invalid_indexs:Iterable):
+        def _flatten_complex_iter_rable_to_list_of_int(inputs):
+            buf = set()
+            for item in inputs:
+                if isinstance(item,int):
+                    buf.add(item)
+                elif isinstance(item,Iterable):
+                    for inner_item in _flatten_complex_iter_rable_to_list_of_int(item):
+                        buf.add(inner_item)
+                else:
+                    raise ValueError("item should be an iterable object or integer, not {}.".format(item))
+            return sorted(buf)
+        original_indexes = original_indexes[:]
+        invalid_indexs = _flatten_complex_iter_rable_to_list_of_int(invalid_indexs)
+        for index in invalid_indexs:
+            original_indexes.remove(index)
+        return original_indexes
+    @typechecked
+    def _check_if_within_valid_indexes(self,target_indexes:Iterable,valid_indexes:Iterable):
+        for index in target_indexes:
+            if index not in valid_indexes:
+                raise ValueError("index `{}` in  are not in valid indexes.".format(index))
+    def _dist_tensor_to_2D_container(self,tensor,index,indicator,container):
+        """
+        According to the cooperation between index and 2-D indicator,
+        put a tensor to each row of a 2D buffer, i.e., a 2-D list, which can be regarded as a container or vector.
+
+        `tensor` and `index` are one-to-one correspondence.
+        If index in indicator's `a` row and `b` column, container's `a` row will append the `tensor`.
+
+        i.e.,`tensor` will be repeated in each row of container if the corresponding `index` is in indicator.
+        """
+        container = container[:] # copy
+        for row_index in range(len(container)):
+            if index in indicator[row_index]: # 
+                tmp_row = container[row_index][:]
                 tmp_row.append(tensor)
-                feature_maps_vectors[row_index] = tmp_row
+                container[row_index] = tmp_row
+        return container
+    def _normalize_input(self,inputs):
+        """
+        Normalize input, make it suitable for base model. 
+        Generally, a base model provide preprocess_input() function to preprocess input.
+        But usually, modify the data_format and broadcast some dimension are also needed.
+        For example,
+            see https://github.com/keras-team/keras/blob/v2.8.0/keras/applications/vgg16.py#L230-L233
+            The images are converted from RGB to BGR, then each color channel is zero-centered with respect to the ImageNet dataset, without scaling.
+        normalize input in 4 steps:
+            1. normalize data format
+            2. reshape more than expected dimensions to batch dimension as broad sense batch dimensions.
+                if base model is a fully convolutional model (no pooling layer), there is no need to reshape, since
+                 convolution operation takes more than expected dimensions as broad sense batch dimensions,
+                 as long as the expected dimensions are one to one correspondence.
+                 i.e. convolution operation has equivalence between "reshape then convolution" and "convolution then reshape".
+                However, if the base model has pooling layer, we must reshape input tensor, because 
+                pooling operation has no equivalence between "reshape then pooling" and "pooling then reshape".
+                More than expected dimensions will not be considered as broad sense batch dimensions but meaningful dimensions, in pooling operation.
 
-        # Since feature_maps_vectors is just a reference, not copy, there is no need to return. But for more easily understanding, still return.
-        # return feature_maps_vectors 
-    def _normalize_input(self,inputs,**kwargs):
+                Additional, if a posterior operation deals with feature maps given by this class, such as "Gram Matrix", reshape more than expected dimensions is also needed,
+                beacuse even though the meaninful dimensions are equivalent before the feature maps, they are not equivalent in feature maps since basic model can not 
+                treat each meaninful dimension fairly.
+
+                So, for stability, reshape in needed.
+            3. broadcast
+            4. preprocess input by base model's preprocess_input function
         """
-        see https://github.com/keras-team/keras/blob/v2.8.0/keras/applications/vgg16.py#L230-L233
-        The images are converted from RGB to BGR, then each color channel is zero-centered with respect to the ImageNet dataset, without scaling.
-        """
-        inputs = self._normalize_data_format(inputs)
+        inputs = self._normalize_input_data_format(inputs)  # then the channels dimension index will be the same to self._meta_data["channel_index"]
+        inputs = self._reshape_and_keep_fixed_dimensions(inputs,self._additional_meta_data["reshape_fixed_indexes"]) # get supported_data_shape
         shape = inputs.shape.as_list()
-        shape[-1]=3
+        for i,(in_shape,ex_shape) in enumerate(zip(shape,self._model_meta_data["supported_data_shape"])): # ex_shape expected_shape
+            if ex_shape is not None:
+                if in_shape != ex_shape:
+                    shape[i] = ex_shape
         inputs = tf.broadcast_to(inputs,shape)
-        assert inputs.shape[-1]==3
         return self._preprocess_input(inputs)
-    def _normalize_data_format(self,inputs):
+    def _normalize_input_data_format_wrapper(self,data_format,supported_data_format):
         """
-        vgg layers only support channels_last data_format
-        even though preprocess_input func support both channels_last and channels_first
-        So, after receiving inputs, we compulsorily change inputs's data_format to channels_last if it is channels_first.
+        Usually, a basic model only supports channels_last or channels_first data_format.
+        For example,
+            vgg layers only support channels_last data_format
+            even though its preprocess_input func support both channels_last and channels_first
+            So, after receiving inputs, we compulsorily change inputs's data_format.
         """
-        if self._data_format == "channels_first":
+        def _first_to_last(inputs):
             perm = list(range(len(inputs.shape)))
             perm = [perm[0]]+perm[2::]+[perm[1]]
             inputs = tf.transpose(inputs,perm)
-        return inputs
-    def reduce_high_dimension_inputs(self,inputs):
-        """
-        Transer a tensor's dimension if its shape different from the vgg needs.
-        For a specific vgg layer, input should be [B,H,W,3] in shape.
-        `B` dimension  is batch dimension and will be preserved when calculation.
-        If a tensor has more than this shape, like [B,D1,D2,D3,...,H,W,3],
-        the `B,D1,D2,D3,...` dimension will be considered as general (broad sense) 
-        batch dimension and preserved when calculation.
-
-        If we use vgg for `Perceptual Loss`, we take the following steps:
-            1. Considier 2 inputs `y_true and y_pred`, both in shape  [B,D1,D2,D3,...,H,W,C] or  [B,C,D1,D2,D3,...,H,W]
-                if their data_format is "channels_first", we transpose it to "channels_last"
-                then
-                y_true's shape is [B,D1,D2,D3,...,H,W,C]
-                y_pred's shape is [B,D1,D2,D3,...,H,W,C]
-                if C!=3 and C!=1 (C cannot broadcast to 3), raise error since it not suitable to vgg layers
-                broadcast `C` dimension
-                then
-                y_true's shape is [B,D1,D2,D3,...,H,W,3]
-                y_pred's shape is [B,D1,D2,D3,...,H,W,3]
-            2. Since vgg actually works on last 3 dimensions [H,W,3],
-                a smallest input shape is [1,H,W,3] (maybe [1,H,W,1] and broadcast to [1,H,W,3])
-                then we will got a list of `n` feature maps:
-                    [f1,f2,...,fn], 
-                    each `fx` is [1,new_H,new_W,new_C] shape, 
-                    where new_H,new_W,new_C are determined by concrete vgg layers.
-                So, more generally,
-                y_true's feature maps is [f1_true,f2_true,...,fn_true]
-                    each `fx` is [B,D1,D2,D3,...,new_H,new_W,new_C] shape,
-                y_pred's feature maps is [f1_pred,f2_pred,...,fn_pred]
-                    each `fx` is [B,D1,D2,D3,...,new_H,new_W,new_C] shape,
-                then, some following loss functions work on the list of feature maps and get a mean loss.
-                Hence, if inputs are `High Dimension` tensors, only last 3 dimensions works through vgg layers.
-                The finally loss is an average over other dimensions. 
-                
-                If inputs in 4-dimension shape, like [B,H,W,C], the finally loss will meet our expectations,
-                but if inputs in 5 or more dimensions, the output loss will be contrary to our expectations,
-                i.e., only last 3 dimensions are considered as 2-D images, unfair to other dimensions (except real batch dimension).
-
-                So, if inputs in high dimension, we take the following steps:
-                    1. Considier 2 inputs `y_true and y_pred`, have N dimensions, both in shape [B,D1,D2,...,H,W,3],
-                        real batch size (not broad sense batch size) is `B`, channels dimension has broadcast to 3 and transposed to last.
-                        make a list of tensor from y_true
-                        [y1_true,y2_true,...,y{C_{N-2}^{2}}_true], 
-                            "{C_{N-2}^{2}}" means choosing 2 dimensions as "pixel wise" dimension from `D1,D2,...,H,W`
-                        
-                        make a list of tensor from y_pred
-                        [y1_pred,y2_pred,...,y{C_{N-2}^{2}}_pred], 
-                            "{C_{N-2}^{2}}" means choosing 2 dimensions as "pixel wise" dimension from `D1,D2,...,H,W`
-                        then, we want to compute the loss across above 2 lists ans got a loss list
-                        [loss(y1_true,y1_pred),loss(y2_true,y2_pred),...,loss(y{C_{N-2}^{2}}_true,y{C_{N-2}^{2}}_pred)]
-
-                        the average of this loss list is our real expected loss. It takes use of each dimension (except real batch dimension),
-                        and makes each dimension (except real batch dimension and channels dimension) fair.
-                        
-                    2. With the help of broad sense batch dimension, 
-                        if y1_true,y2_true,...,y{C_{N-2}^{2}}_true have the same shape
-                        and y1_pred,y2_pred,...,y{C_{N-2}^{2}}_pred have the same shape
-                        we can
-                            stack [y1_true,y2_true,...,y{C_{N-2}^{2}}_true] as new tensor new_y_true
-                            stack [y1_pred,y2_pred,...,y{C_{N-2}^{2}}_pred] as new tensor new_y_pred
-                            so we have:
-                            loss(new_y_true,new_y_pred) == mean([loss(y1_true,y1_pred),loss(y2_true,y2_pred),...,loss(y{C_{N-2}^{2}}_true,y{C_{N-2}^{2}}_pred)])
-                            this is a speedup method.
-                        but in most time, y1_true,y2_true,...,y{C_{N-2}^{2}}_true dot not have the same shape
-                            
-        """
-        # suppose inputs' data_format has ben transposed to "channels_last"
-        if len(inputs.shape)>=5:
-            inputs_list = self._tensor_repermutation(
-                            inputs,perm_target_indexes=self._inputs_perm_indicator["reperm_target_indexes"],
-                            perm_fixed_indexes=self._inputs_perm_indicator["reperm_fixed_indexes"])
-            
-            _reduce_general_batch_size = functools.partial(self._reduce_general_batch_size,
-                                perm_meaningful_indexes=self._inputs_perm_indicator["meaningful_indexes"])
-            inputs_list = list(map(_reduce_general_batch_size,inputs_list))
-
-            try:
-                new_inputs = tf.stack(inputs_list,axis=1) # if elements in inputs_list have the same shape
-            except (ValueError,tf.errors.InvalidArgumentError):
-                new_inputs = inputs_list
-            return new_inputs
-        else:
+            return inputs 
+        def _last_to_first(inputs):
+            perm = list(range(len(inputs.shape)))
+            perm = [perm[0]]+[perm[-1]]+perm[1:-1]
+            inputs = tf.transpose(inputs,perm)
+            return inputs 
+        def _do_nothing(inputs):
             return inputs
-    def _reduce_general_batch_size(self,tensor,perm_meaningful_indexes=[]):
+        if data_format != supported_data_format:
+            if data_format  == "channels_first":
+                return _first_to_last
+            elif data_format  == "channels_last":
+                return _last_to_first
+            else:
+                raise ValueError("Data_format should be one of channels_first or channels_last, not {}.".format(data_format))
+        else:
+            return _do_nothing
+        
+    def _reshape_and_keep_fixed_dimensions(self,tensor,fixed_dimensions_indexes=[]): # default [] is OK since the function works on its copy
         """
-        Reshape a tensor, make its dimensions meaningful and work in posterior steps.
-        Consider a tensor in shape [B,D1,D2,...D{N-2},C], its meaningful dimensions 
-        are `D{N-3}`, `D{N-2}` and `C`.
-
-        If in in posterior steps, such as "get gram matrix", we should consider "[B,D1,D2,..,D{N-4}]"
-        as broad sense batch dimension. But if we change nothing, a traditional  "get gram matrix"
-        procedure will consider `B` as batch dimension, and meaningful dimensions will be `[D1,D2,...D{N-2}]`,
-        leading to the results that far from our excepted.
-        So, reducing a tensor's broad sense batch dimensions (general batch dimensions) 
-        ,according its meaningful dimensions, is needed.
+        Reshape a tensor, maintain fixed dimensions, merge unfixed dimensions.
+            Usually application is considering unfixed dimensions as broad sense batch dimensions and merge them to real batch dimension.
+        If fixed dimensions is discontinuous and not last dimensions, we will transpose it first. So there is no deed to care about data_format, as long as fixed_dimensions_indexes indicates correct indexes. 
         """
         N = len(tensor.shape)
-        perm_meaningful_indexes = [i+N if i<0 else i for i in perm_meaningful_indexes] # normalize index
-        perm_meaningful_indexes = sorted(perm_meaningful_indexes)
-        perm = [i for i in range(N) if i not in perm_meaningful_indexes]
-        perm = perm+perm_meaningful_indexes
-        remaining_shape = [tensor.shape[i] for i in perm_meaningful_indexes]
+        fixed_dimensions_indexes = sorted([i+N if i<0 else i for i in fixed_dimensions_indexes]) # normalize index
+        perm = [i for i in range(N) if i not in fixed_dimensions_indexes]
+        perm = perm+fixed_dimensions_indexes
+        remaining_shape = [tensor.shape[i] for i in fixed_dimensions_indexes]
         return tf.reshape(tf.transpose(tensor,perm),[-1]+remaining_shape)
 
-    def _tensor_repermutation(self,tensor,perm_target_indexes=[],perm_fixed_indexes=[]):
+    def _tensor_repermutation(self,tensor,reperm_target_indexes=[],reperm_fixed_indexes=[]): # default [] is OK since the function works on its copy
         """
         Re-permutation a tensor by its perm's permutation and combination.
         Consider a N dimensions tensor in shape [B,D1,D2,...D{N-2},C] 
@@ -270,10 +314,10 @@ class FeatureMapsGetter(tf.keras.Model):
                 if un-fixed indexes are [1,2,...,{N-2}] , perm_target_indexes=[-3,-2]
                     cleared un-fixed indexes are [None,None,...,None]
                     put selected and un-selected elements, then we will get the final perm:
-                        [0,3,4,...,N-2,1,2,N-1]
-                        [0,2,4,...,N-2,1,3,N-1]
+                        [0,3,4,...,N-2,{1},{2},N-1]
+                        [0,2,4,...,N-2,{1},{3},N-1]
                         ...
-                        [0,1,2,...,N-4,N-3,N-2,N-1]
+                        [0,1,2,...,N-4,{N-3},{N-2},N-1]
                     So perm's permutation and combination has C_{N-len(perm_fixed_indexes)}^{len(perm_target_indexes)} results.
                     Each result leads to a excepted re-permutation of tensor。
             Final output is a list of these excepted re-permutation tensors.
@@ -288,69 +332,169 @@ class FeatureMapsGetter(tf.keras.Model):
         # [B,D1,D2,...,H,W,3] N dimensions
         input_shape = tensor.shape # y_true or y_pred
         N = len(input_shape)
-        perm_target_indexes = [i+N if i<0 else i for i in perm_target_indexes ] # normalize index
-        perm_fixed_indexes = [i+N if i<0 else i for i in perm_fixed_indexes] # normalize index
+        reperm_target_indexes = sorted([i+N if i<0 else i for i in reperm_target_indexes]) # normalize index
+        reperm_fixed_indexes = sorted([i+N if i<0 else i for i in reperm_fixed_indexes]) # normalize index
 
-        _confused_indexes = [i for i in perm_target_indexes if i in perm_fixed_indexes]
+        _confused_indexes = [i for i in reperm_target_indexes if i in reperm_fixed_indexes]
         assert len(_confused_indexes)==0
 
-        perm_all_indexes = list(range(N))
-        _perm_fixed_indexes = sorted(perm_fixed_indexes,reverse=True)
-        for index in _perm_fixed_indexes:
-            perm_all_indexes.pop(index) # pop() will work since index and value are equal
-        unfixed_indexes = perm_all_indexes
+        perm = list(range(N))
+        unfixed_indexes = perm[:]
+        undetermined_indexes = perm[:]
+        perm = [None,]*N
+        for index in reperm_fixed_indexes:
+            perm[index] = index 
+            unfixed_indexes.remove(index)
+            undetermined_indexes.remove(index)
         perms_buf = []
-        for selected_indexes in itertools.combinations(unfixed_indexes,len(perm_target_indexes)):
-            perm = [None,]*N
-            for index in perm_fixed_indexes:
-                perm[index] = index 
-            for source_index,target_index in zip(selected_indexes,perm_target_indexes):
-                perm[target_index] = source_index 
+        for selected_indexes in itertools.combinations(unfixed_indexes,len(reperm_target_indexes)):
+            tmp_perm = perm[:]
             unselected_indexes = unfixed_indexes[:]
-            for index in selected_indexes:
-                unselected_indexes.remove(index) # pop() will not work since index and value are not equal
-            remaining_indexes = [i for i,x in enumerate(perm) if x is None ]
-            for source_index,target_index in zip(unselected_indexes,remaining_indexes):
-                perm[target_index] = source_index 
-            perms_buf.append(perm)
+            remaining_indexes = undetermined_indexes[:]
+            for source_index,target_index in zip(selected_indexes,reperm_target_indexes): # selected_index will be repermutated to target_index
+                tmp_perm[target_index] = source_index 
+                unselected_indexes.remove(source_index) 
+                remaining_indexes.remove(target_index)
+            for source_index,target_index in zip(unselected_indexes,remaining_indexes): # unselected_index will be repermutated to remaining_index (from target_index) in original order.
+                tmp_perm[target_index] = source_index 
+            perms_buf.append(tmp_perm)
         return [tf.transpose(tensor,perm) for perm in perms_buf]
+
+    def transform_high_dimension_inputs(self,inputs):
+        """
+        Transform a tensor if its shape (dimension) different from the basic model needs.
+    
+        Consider a N dimension input in shape [B,D1,D2,...,D{N-3},D{N-2},C]  or  [B,C,D1,D2,...,D{N-3},D{N-2}]
+        Each dimension in `D1,D2,...,D{N-2}` is meaningful dimension. If a basic model only takes last 3 dimensions
+        as special dimensions, i.g., vgg take [D{N-3},D{N-2},C] as [H,W,3] dimension, the `B,D1,D2,...,D{N-4}` will be broad sense batch dimension,
+        which is unfair for `D1,D2,...,D{N-4}` dimensions.
+            For example,
+            Consider a specific vgg layer, input should be [B,H,W,3] in shape.
+            `B` dimension  is batch dimension and will be preserved when calculation.
+            If a tensor has more than this shape, like [B,D1,D2,D3,...,H,W,3],
+            the `B,D1,D2,D3,...` dimension will be considered as general (broad sense) 
+            batch dimension and preserved when calculation.
+        Actually, each meaningful dimension should be treated fairly.
+
+        A more appropriate method to deal with this poser is transforming the tensor to a list of tensor. Here are the steps in detail:
+            1. consider an input in shape [B,D1,D2,...,D{N-3},D{N-2},C]  or  [B,C,D1,D2,...,D{N-3},D{N-2}]
+                the meaningful_dimension_indexes is [1,2,...,N-2] or [2,3,...,N-1]
+                find some information about basic model:
+                    real batch_dimension_index, 0 ususally
+                    channles_dimension_index, 1 or -1 ususally
+                    fixed_dimension_indexes (represents the unchanged dimension index when transforming), which consists of batch_dimension_index and channles_dimension_index usually
+                    target_dimension_indexes (represents the working dimension index, i.e., the target dimension index indewhen transforming), -3 and -2 usually (such as vgg's H,W dimension)
+            2. if len(target_dimension_indexes)==n
+                Choose n dimensions from meaningful dimensions, maintain their original relative order, transpose these selected dimensions to target dimensions.
+                Each choose-transpose method will be recorded in a list.
+                Exhaust all choise, we got a total list as the transforming result.
+            3. The operation of step `2` can be conducted by  dimensions index.
+            4. Optional step:
+                With the help of broad sense batch dimension, 
+                 if the result list can be stacked following real batch dimension, it will be speed up.
+                Try this step.
+        
+        So, by the transforming, if tensor's shape different from the basic model needs, we will transform it to a list of tensor.
+        Before transforming, there is a tensor and a basic model's output by this tensor.
+        After transforming, there will be a list of tensor and a list of basic model's output correspondingly.
+        
+        If a posterior operation calculates scalars on each element of these output list and makes an average,
+        the finally result will be very reasonable, treating each meaningful dimension in a balanced way.  
+
+        A more concreate example:
+            basic model is vgg16
+            input shape is [7,4,5,6,3]
+            self._meta_data["reperm_target_indexes"] = [-3,-2]
+            self._meta_data["reperm_fixed_indexes"] = [0,-1]
+            inputs_list = [tensor1,tensor2,tensor3]
+            tensor1 is in shape [7,6,4,5,3]
+            tensor2 is in shape [7,5,4,6,3]
+            tensor3 is in shape [7,4,5,6,3]
+
+            since inputs_list cannot be stacked,
+            transforming result is just inputs_list     
+        """       
+        inputs_list = self._tensor_repermutation(
+                        inputs,reperm_target_indexes=self._additional_meta_data["reperm_target_indexes"],
+                        reperm_fixed_indexes=self._additional_meta_data["reperm_fixed_indexes"])
+        try:
+            new_inputs = tf.concat(inputs_list,axis=0) # if elements in inputs_list have the same shape, concat then in batch dimension for speed up
+        except (ValueError,tf.errors.InvalidArgumentError):
+            new_inputs = inputs_list
+        return new_inputs
+    def summary(self):
+        self._model.summary()
     def call(self,inputs,**kwargs):
         x = self._normalize_input(inputs)
         output_buf = [[],]*len(self._feature_maps_indicators)
-        for index in self._valid_layer_indexes:
+        for index in self._additional_meta_data["valid_layer_indexes"]:
             _layer  = self._model.get_layer(index=index)
             y = _layer(x,**kwargs)
-            self._dist_feature_maps(tensor=y,layer_out_index=index,feature_maps_vectors=output_buf)
+            output_buf = self._dist_tensor_to_2D_container(tensor=y,
+                        index=index,indicator=self._feature_maps_indicators,
+                        container=output_buf)
             x = y
             if index >= self._fused_index:
                 break
         return output_buf
 
 class PerceptualLossExtractor(tf.keras.Model):
+    """
+    see: https://arxiv.org/pdf/1603.08155.pdf
+
+    calculation perceptual loss between inputs[0](y_true) and inputs[1](y_pred)
+    since perceptual loss needs a pretrained model as feature extractor
+    so this class in inherited from tf.keras.Model
+    the a pretrained model is managed by class FeatureMapsGetter, as basic model
+
+    Args:
+        name:name,
+        model_name:model_name,
+        data_format:represents the data_format of inputs[0] and inputs[1]
+        transform_high_dimension: 
+            If True, inputs[0] and inputs[1] will be transformed to a list of tensor when their shape different from basic model's needs
+            If False, inputs[0] and inputs[1] will be maintained, meanwhile, their meaningful dimensions will not be treated fairly. 
+        use_pooling:
+            If False, pooling layers in basic model will be skipped when inference.
+            If True, pooling layers in basic model will be used as normal when inference.
+        use_feature_reco_loss: indicate whether calculate feature reconstruction loss
+        use_style_reco_loss: indicate whether calculate style reconstruction loss
+        feature_reco_index: for feature reconstruction loss, it indicate the layer index that will be gathered as feature maps by FeatureMapsGetter
+        feature_reco_sample_weight:for feature reconstruction loss, it indicate the sample_weight of the loss between each tow feature maps of inputs[0] and inputs[1]
+        style_reco_index: for style reconstruction loss, indicate the layer index that will be gathered as feature maps by FeatureMapsGetter
+        style_reco_sample_weight:for style reconstruction loss, it indicate the sample_weight of the loss between each tow feature maps of inputs[0] and inputs[1]
+    """
     @typechecked
     def __init__(self,
                  name:Union[None,str]=None,
                  model_name:str="vgg16",
                  data_format:str="channels_last",
-                 valid_layer_index:List[int]=[1,2,4,5,7,8,9,11,12,13,15,16,17],
+                 transform_high_dimension:bool=True,
+                 use_pooling:bool=True,
                  use_feature_reco_loss:bool=True,
-                 use_style_reco_loss:bool=False,
-                 feature_reco_index:List[int]=[5],
-                 feature_reco_sample_weight:List[int]=[1],
+                 use_style_reco_loss:bool=True,
+                 feature_reco_index:List[int]=[5,],
+                 feature_reco_sample_weight:List[Union[int,float]]=[1,],
                  style_reco_index:List[int]=[2,5,9,13],
-                 style_reco_sample_weight:List[int]=[1,1,1,1],
+                 style_reco_sample_weight:List[Union[int,float]]=[1,1,1,1],
                  **kwargs):
         if name is not None:
             name = name+"_"+model_name+"_perceptual_loss_extractor"
         else:
             name = model_name+"_perceptual_loss_extractor"
-        # kwargs["dtype"] = None # vgg16 should work in float32 as default
+        if "dtype" in kwargs.keys():
+            if kwargs["dtype"] is not None:
+                logging.warning("""
+                Setting FeatureMapsGetter's dtype to a specific dtype but not `None` may fail to meet the user's expectations. Since the actually dtype should follow 
+                model's practical dtype. For numerical stability, we mandatorily set dtype to None. 
+                """)
+        kwargs["dtype"] = None
         super(PerceptualLossExtractor,self).__init__(name=name,**kwargs)
-       
+        
         self.data_format = data_format.lower() #  inputs' data_format, received by call()
         if self.data_format not in ["channels_first","channels_last"]:
             raise ValueError("data_format of PerceptualLoss should be 'channels_last' or 'channels_first', not {}.".format(data_format))
-        self.valid_layer_index = valid_layer_index
+        self.transform_high_dimension = transform_high_dimension
         self.use_feature_reco_loss = use_feature_reco_loss
         self.use_style_reco_loss  = use_style_reco_loss
         feature_reco_loss = MeanFeatureReconstructionError(mode="L2")
@@ -363,28 +507,23 @@ class PerceptualLossExtractor(tf.keras.Model):
         self.style_reco_index = style_reco_index # relu1_2 relu2_2 relu3_3 relu4_3
         self.style_reco_sample_weight = style_reco_sample_weight
         assert (len(self.style_reco_index)==len(self.style_reco_sample_weight))
-       
         
-        feature_maps_indicators=(tuple(feature_reco_index) if use_feature_reco_loss else tuple([]),tuple(style_reco_index)  if use_style_reco_loss else tuple([]))
+        feature_maps_indicators=(tuple(feature_reco_index) if use_feature_reco_loss else tuple([]),tuple(style_reco_index) if use_style_reco_loss else tuple([]))
         self.feature_maps_getter = FeatureMapsGetter(name=name,
                                     model_name=model_name,
                                     data_format=data_format,
-                                    use_pooling=False,
+                                    use_pooling=use_pooling,
                                     feature_maps_indicators=feature_maps_indicators,
                                     **kwargs)
-        self._preprocess_input = self.feature_maps_getter._preprocess_input
-    def _normalize_data_format(self,inputs):
-        """
-        vgg layers only support channels_last data_format
-        even though preprocess_input func support both channels_last and channels_first
-        So, after receiving inputs, we compulsorily change inputs's data_format to channels_last if it is channels_first.
-        """
-        if self.data_format == "channels_first":
-            perm = list(range(len(inputs.shape)))
-            perm = [perm[0]]+perm[2::]+[perm[1]]
-            inputs = tf.transpose(inputs,perm)
-        return inputs
     def get_feature_maps(self,inputs,feature_reco_sample_weight,style_reco_sample_weight,**kwargs):
+        """
+        If inputs is a list, it means inputs has been transformed as a list of tensor, since its original shape has high_dimension that cannot treated fairly by basic model.
+        So, sample_weight, given by user, should be expand simultaneously and automatically. A user dose not need to care about the expanding detail.
+        
+        Since posterior loss calculation step is just an average cross each feature map,
+        if an inputs tensor has been transformed to a list of tensor of `n` elements, we can still gather the `n` times feature maps in a list, the result of loss 
+        calculation will be equivalent, as long as sample_weight expanded correctly.
+        """
         if isinstance(inputs,list):
             _featuere_maps_for_feat = []
             _featuere_maps_for_style = []
@@ -404,17 +543,20 @@ class PerceptualLossExtractor(tf.keras.Model):
             featuere_maps_for_feat,featuere_maps_for_style = self.feature_maps_getter(inputs,**kwargs)
         return (featuere_maps_for_feat,featuere_maps_for_style,feature_reco_sample_weight,style_reco_sample_weight)
     def build(self,input_shape):
-        super().build(input_shape)
+        super().build(input_shape) 
+        ## disable input shape check to speed up
         # input_shape = tf.TensorShape(input_shape)
         # assert input_shape[0]==2
-        # self.input_spec = tf.keras.layers.InputSpec(shape=input_shape)
-    def summary(self):
-        self.model.summary()
+        # input_shape = [None,]*(len(input_shape)-1)
+        # input_shape = tuple([2]+input_shape)
+        # self.input_spec = tf.keras.layers.InputSpec(shape=input_shape)  # input_spec check input shape mandatorily, so for different input shape, there should be different instance of this class
     def call(self,inputs,**kwargs):
-        # inputs_true,inputs_pred = self.normalize_input(inputs[0]),self.normalize_input(inputs[1])
-        inputs_true,inputs_pred = self.feature_maps_getter.reduce_high_dimension_inputs(inputs[0]),self.feature_maps_getter.reduce_high_dimension_inputs(inputs[1])
+        if self.transform_high_dimension:
+            inputs_true,inputs_pred = self.feature_maps_getter.transform_high_dimension_inputs(inputs[0]),self.feature_maps_getter.transform_high_dimension_inputs(inputs[1])
+        else:
+            inputs_true,inputs_pred = inputs[0],inputs[1]
         kwargs["training"] = False # force un-training
-        # print(inputs_true.shape)
+
         loss = 0.0
         if (self.use_feature_reco_loss)or(self.use_style_reco_loss):
             true_featuere_maps_for_feat,true_featuere_maps_for_style,\
@@ -561,10 +703,11 @@ if __name__ == "__main__":
     print("********************V4 end******************")
 
     print("********************V5 start******************")
+    policy = tf.keras.mixed_precision.Policy('mixed_float16')
     feature_maps_indicators = ((1,2,4,5),())
     feature_maps_getter = FeatureMapsGetter(use_pooling=False,feature_maps_indicators=feature_maps_indicators,dtype=policy)
-    # V.build(input_shape=None)
-    # x_ = tf.transpose(x_,perm=[0,3,1,2,4])
+    x_ = tf.transpose(x_,perm=[0,3,1,2,4])
+    x_ = tf.transpose(x_,perm=[0,3,1,2,4])
     m = [tf.keras.metrics.Mean() for _ in range(5)]
     start = time.time()
     for _ in range(100):
@@ -588,8 +731,13 @@ if __name__ == "__main__":
     print("********************V5 end******************")
 
 
-
-    vf = PerceptualLossExtractor(valid_layer_index=[1,2,4,5,7,8,9,11,12,13,15,16,17],dtype="mixed_float16")
+    x_  = tf.random.uniform(shape=[1,1,16,128,128]) 
+    vf = PerceptualLossExtractor(model_name="vgg16",
+                 data_format="channels_first",
+                 transform_high_dimension=True,
+                 use_pooling=True,
+                 use_feature_reco_loss=True,
+                 use_style_reco_loss=False,)
     m =tf.keras.metrics.Mean() 
     start = time.time()
     for _ in range(100):
