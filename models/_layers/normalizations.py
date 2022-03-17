@@ -188,8 +188,6 @@ class GroupNormalization(tf.keras.layers.Layer):
         }
         base_config = super().get_config()
         return {**base_config, **config}
-    # def compute_output_shape(self, input_shape):
-    #     return input_shape
     def _reshape_into_groups(self, inputs, input_shape, tensor_input_shape):
         group_shape = [tensor_input_shape[i] for i in range(len(input_shape))]
         is_instance_norm = (input_shape[self.axis] // self.groups) == 1

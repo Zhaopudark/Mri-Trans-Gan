@@ -42,9 +42,7 @@ class LogsMaker():
         tmp_dict["test"] = _path+"/test_logs"
         return tmp_dict
     def _get_time_stamp(self):
-        if "time" in self._time_stamp_register.keys():
-            pass
-        else:
+        if "time" not in self._time_stamp_register.keys():
             self._time_stamp_register["time"] = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         return self._time_stamp_register["time"]
     def wirte(self,training,log_types,log_contents):

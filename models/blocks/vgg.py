@@ -62,9 +62,8 @@ class FeatureMapsGetter(tf.keras.Model):
             name = name+"_"+model_name+"_feature_maps_getter"
         else:
             name = model_name+"_feature_maps_getter"
-        if "dtype" in kwargs.keys():
-            if kwargs["dtype"] is not None:
-                logging.warning("""
+        if "dtype" in kwargs.keys() and kwargs["dtype"] is not None:
+            logging.warning("""
                 Setting FeatureMapsGetter's dtype to a specific dtype but not `None` may fail to meet the user's expectations. Since the actually dtype should follow 
                 model's practical dtype. For numerical stability, we mandatorily set dtype to None. 
                 """)
@@ -79,12 +78,14 @@ class FeatureMapsGetter(tf.keras.Model):
                             classifier_activation='softmax'
                             )
             self._preprocess_input = functools.partial(tf.keras.applications.vgg16.preprocess_input,data_format="channels_last")
-            self._model_meta_data = {}
-            self._model_meta_data["input_layer_index"] = 0
-            self._model_meta_data["pooling_layer_indexes"] = [3,6,10,14,18]
-            self._model_meta_data["forced_pooling_threshold"] = 6 
-            self._model_meta_data["supported_data_format"] = "channels_last"
-            self._model_meta_data["supported_data_shape"] = [None,None,None,3] 
+            self._model_meta_data = {
+                "input_layer_index": 0,
+                "pooling_layer_indexes": [3, 6, 10, 14, 18],
+                "forced_pooling_threshold": 6,
+                "supported_data_format": "channels_last",
+                "supported_data_shape": [None, None, None, 3],
+            }
+
         elif _model_name == "vgg19":
             self._model = tf.keras.applications.vgg19.VGG19(
                             include_top=False, weights='imagenet', input_tensor=None,
@@ -92,10 +93,12 @@ class FeatureMapsGetter(tf.keras.Model):
                             classifier_activation='softmax'
                             )
             self._preprocess_input = functools.partial(tf.keras.applications.vgg19.preprocess_input,data_format="channels_last")
-            self._model_meta_data = {}
-            self._model_meta_data["input_layer_index"] = 0
-            self._model_meta_data["pooling_layer_indexes"] = [3,6,11,16,21]
-            self._model_meta_data["forced_pooling_threshold"] = 6
+            self._model_meta_data = {
+                "input_layer_index": 0,
+                "pooling_layer_indexes": [3, 6, 11, 16, 21],
+                "forced_pooling_threshold": 6,
+            }
+
             self._model_meta_data["supported_data_format"] = "channels_last"
             self._model_meta_data["supported_data_shape"] = [None,None,None,3]
         else:
@@ -107,7 +110,7 @@ class FeatureMapsGetter(tf.keras.Model):
         self._normalize_input_data_format = self._normalize_input_data_format_wrapper(
             self._data_format,
             self._model_meta_data["supported_data_format"])
-            
+
         self._additional_meta_data["batch_index"] = 0 # the precondition
         if self._data_format =="channels_last":
             self._additional_meta_data["channel_index"] = -1
@@ -117,9 +120,9 @@ class FeatureMapsGetter(tf.keras.Model):
             self._additional_meta_data["reperm_target_indexes"] = [-2,-1] # H,W in [B,C,...,H,W]
         self._additional_meta_data["reperm_fixed_indexes"] = [self._additional_meta_data["batch_index"],self._additional_meta_data["channel_index"]] # B,C
         self._additional_meta_data["reshape_fixed_indexes"] = self._additional_meta_data["reperm_target_indexes"]+[self._additional_meta_data["channel_index"]] # H W C
-        
+
         self._feature_maps_indicators,_layer_indexes_set = self._sort_indicators(feature_maps_indicators)
-        self._fused_index = max(_layer_indexes_set)
+        self._fused_index = max(_layer_indexes_set) if _layer_indexes_set else 0
 
         use_pooling = self._check_if_forced_use_pooling(
             concerned_index=self._fused_index,
@@ -270,20 +273,22 @@ class FeatureMapsGetter(tf.keras.Model):
         else:
             return _do_nothing
         
-    def _reshape_and_keep_fixed_dimensions(self,tensor,fixed_dimensions_indexes=[]): # default [] is OK since the function works on its copy
+    def _reshape_and_keep_fixed_dimensions(self, tensor, fixed_dimensions_indexes = None):    # default [] is OK since the function works on its copy
         """
         Reshape a tensor, maintain fixed dimensions, merge unfixed dimensions.
             Usually application is considering unfixed dimensions as broad sense batch dimensions and merge them to real batch dimension.
         If fixed dimensions is discontinuous and not last dimensions, we will transpose it first. So there is no deed to care about data_format, as long as fixed_dimensions_indexes indicates correct indexes. 
         """
+        if fixed_dimensions_indexes is None:
+            fixed_dimensions_indexes = []
         N = len(tensor.shape)
         fixed_dimensions_indexes = sorted([i+N if i<0 else i for i in fixed_dimensions_indexes]) # normalize index
         perm = [i for i in range(N) if i not in fixed_dimensions_indexes]
-        perm = perm+fixed_dimensions_indexes
+        perm += fixed_dimensions_indexes
         remaining_shape = [tensor.shape[i] for i in fixed_dimensions_indexes]
         return tf.reshape(tf.transpose(tensor,perm),[-1]+remaining_shape)
 
-    def _tensor_repermutation(self,tensor,reperm_target_indexes=[],reperm_fixed_indexes=[]): # default [] is OK since the function works on its copy
+    def _tensor_repermutation(self, tensor, reperm_target_indexes=None, reperm_fixed_indexes=None):    # default [] is OK since the function works on its copy
         """
         Re-permutation a tensor by its perm's permutation and combination.
         Consider a N dimensions tensor in shape [B,D1,D2,...D{N-2},C] 
@@ -329,6 +334,10 @@ class FeatureMapsGetter(tf.keras.Model):
             Re-permutation result
 
         """
+        if reperm_target_indexes is None:
+            reperm_target_indexes = []
+        if reperm_fixed_indexes is None:
+            reperm_fixed_indexes = []
         # [B,D1,D2,...,H,W,3] N dimensions
         input_shape = tensor.shape # y_true or y_pred
         N = len(input_shape)
@@ -336,7 +345,7 @@ class FeatureMapsGetter(tf.keras.Model):
         reperm_fixed_indexes = sorted([i+N if i<0 else i for i in reperm_fixed_indexes]) # normalize index
 
         _confused_indexes = [i for i in reperm_target_indexes if i in reperm_fixed_indexes]
-        assert len(_confused_indexes)==0
+        assert not _confused_indexes
 
         perm = list(range(N))
         unfixed_indexes = perm[:]
@@ -465,32 +474,27 @@ class PerceptualLossExtractor(tf.keras.Model):
         style_reco_sample_weight:for style reconstruction loss, it indicate the sample_weight of the loss between each tow feature maps of inputs[0] and inputs[1]
     """
     @typechecked
-    def __init__(self,
-                 name:Union[None,str]=None,
-                 model_name:str="vgg16",
-                 data_format:str="channels_last",
-                 transform_high_dimension:bool=True,
-                 use_pooling:bool=True,
-                 use_feature_reco_loss:bool=True,
-                 use_style_reco_loss:bool=True,
-                 feature_reco_index:List[int]=[5,],
-                 feature_reco_sample_weight:List[Union[int,float]]=[1,],
-                 style_reco_index:List[int]=[2,5,9,13],
-                 style_reco_sample_weight:List[Union[int,float]]=[1,1,1,1],
-                 **kwargs):
+    def __init__(self, name:Union[None,str]=None, model_name:str="vgg16", data_format:str="channels_last", transform_high_dimension:bool=True, use_pooling:bool=True, use_feature_reco_loss:bool=True, use_style_reco_loss:bool=True, feature_reco_index: List[int] = None, feature_reco_sample_weight: List[Union[int,float]] = None, style_reco_index: List[int] = None, style_reco_sample_weight: List[Union[int,float]] = None, **kwargs):
+        if feature_reco_index is None:
+            feature_reco_index = [5,]
+        if feature_reco_sample_weight is None:
+            feature_reco_sample_weight = [1,]
+        if style_reco_index is None:
+            style_reco_index = [2,5,9,13]
+        if style_reco_sample_weight is None:
+            style_reco_sample_weight = [1,1,1,1]
         if name is not None:
-            name = name+"_"+model_name+"_perceptual_loss_extractor"
+            name = f'{name}_{model_name}_perceptual_loss_extractor'
         else:
-            name = model_name+"_perceptual_loss_extractor"
-        if "dtype" in kwargs.keys():
-            if kwargs["dtype"] is not None:
-                logging.warning("""
+            name = f'{model_name}_perceptual_loss_extractor'
+        if "dtype" in kwargs.keys() and kwargs["dtype"] is not None:
+            logging.warning("""
                 Setting FeatureMapsGetter's dtype to a specific dtype but not `None` may fail to meet the user's expectations. Since the actually dtype should follow 
                 model's practical dtype. For numerical stability, we mandatorily set dtype to None. 
                 """)
         kwargs["dtype"] = None
         super(PerceptualLossExtractor,self).__init__(name=name,**kwargs)
-        
+
         self.data_format = data_format.lower() #  inputs' data_format, received by call()
         if self.data_format not in ["channels_first","channels_last"]:
             raise ValueError("data_format of PerceptualLoss should be 'channels_last' or 'channels_first', not {}.".format(data_format))
@@ -507,7 +511,7 @@ class PerceptualLossExtractor(tf.keras.Model):
         self.style_reco_index = style_reco_index # relu1_2 relu2_2 relu3_3 relu4_3
         self.style_reco_sample_weight = style_reco_sample_weight
         assert (len(self.style_reco_index)==len(self.style_reco_sample_weight))
-        
+
         feature_maps_indicators=(tuple(feature_reco_index) if use_feature_reco_loss else tuple([]),tuple(style_reco_index) if use_style_reco_loss else tuple([]))
         self.feature_maps_getter = FeatureMapsGetter(name=name,
                                     model_name=model_name,
@@ -580,189 +584,42 @@ class PerceptualLossExtractor(tf.keras.Model):
                                         style_reco_sample_weight)
                 loss += style_reco_loss              
         return loss
-#------------------------------------------------------------------------------------------#
-class Vgg16LayerBuf_V4(tf.keras.Model):
-    # 输出VGG16的前指定若干层
-    def __init__(self,path="D:\\Datasets\\VGG\\vgg16.npy",
-                 name=None,
-                 dtype=None):
-        self.path = path 
-        self.data_dict = np.load(self.path,encoding='latin1',allow_pickle=True).item()
-        super(Vgg16LayerBuf_V4,self).__init__(name=name,dtype=dtype)
-        self.conv1_1 = Vgg2Conv3D(filters=64,kernel_size=[1,3,3],strides=[1,1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.conv1_2 = Vgg2Conv3D(filters=64,kernel_size=[1,3,3],strides=[1,1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        # self.l1_max_pool = tf.keras.layers.MaxPool2D(pool_size=[2,2], strides=[2,2], padding='valid')
-        self.conv2_1 = Vgg2Conv3D(filters=128,kernel_size=[1,3,3],strides=[1,1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.conv2_2 = Vgg2Conv3D(filters=128,kernel_size=[1,3,3],strides=[1,1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-
-        self.conv3_1 = Vgg2Conv3D(filters=256,kernel_size=[1,3,3],strides=[1,1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.conv3_2 = Vgg2Conv3D(filters=256,kernel_size=[1,3,3],strides=[1,1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-        self.conv3_3 = Vgg2Conv3D(filters=256,kernel_size=[1,3,3],strides=[1,1,1],padding="SAME",use_bias=True,activation=None,dtype=dtype)
-    def build(self,input_shape):
-        input_shape = [None,1,224,224,3]
-        flow_shape=self.conv1_1.build(input_shape=input_shape)
-        flow_shape=self.conv1_2.build(input_shape=flow_shape) 
-        flow_shape[-3]//=2
-        flow_shape[-2]//=2
-        flow_shape=self.conv2_1.build(input_shape=flow_shape) 
-        flow_shape=self.conv2_2.build(input_shape=flow_shape) 
-        flow_shape[-3]//=2
-        flow_shape[-2]//=2
-        flow_shape=self.conv3_1.build(input_shape=flow_shape) 
-        flow_shape=self.conv3_2.build(input_shape=flow_shape) 
-        flow_shape=self.conv3_3.build(input_shape=flow_shape)
-        output_shape = flow_shape[:]
-     
-        self.conv1_1.w.assign(tf.reshape(self.data_dict["conv1_1"][0],[1,3,3,3,64]))
-        self.conv1_1.b.assign(self.data_dict["conv1_1"][1])
-        self.conv1_2.w.assign(tf.reshape(self.data_dict["conv1_2"][0],[1,3,3,64,64]))
-        self.conv1_2.b.assign(self.data_dict["conv1_2"][1])
-        self.conv2_1.w.assign(tf.reshape(self.data_dict["conv2_1"][0],[1,3,3,64,128]))
-        self.conv2_1.b.assign(self.data_dict["conv2_1"][1])
-        self.conv2_2.w.assign(tf.reshape(self.data_dict["conv2_2"][0],[1,3,3,128,128]))
-        self.conv2_2.b.assign(self.data_dict["conv2_2"][1])
-        self.conv3_1.w.assign(tf.reshape(self.data_dict["conv3_1"][0],[1,3,3,128,256]))
-        self.conv3_1.b.assign(self.data_dict["conv3_1"][1])
-        self.conv3_2.w.assign(tf.reshape(self.data_dict["conv3_2"][0],[1,3,3,256,256]))
-        self.conv3_2.b.assign(self.data_dict["conv3_2"][1])
-        self.conv3_3.w.assign(tf.reshape(self.data_dict["conv3_3"][0],[1,3,3,256,256]))
-        self.conv3_3.b.assign(self.data_dict["conv3_3"][1])
-
-        return output_shape
-    def call(self,x,training=True,scale=4):
-        layer_buf = []
-        x = tf.broadcast_to(x,x.shape[0:-1]+[3])
-        x = x/3
-        layer_buf.append(x)
-        if scale < 1:
-            return layer_buf
-        x=self.conv1_1(x,training=training)
-        layer_buf.append(x)
-        if scale < 2:
-            return layer_buf
-        x=self.conv1_2(x,training=training)
-        layer_buf.append(x)
-        if scale < 3:
-            return layer_buf 
-        x=self.conv2_1(x,training=training)
-        layer_buf.append(x)
-        if scale < 4:
-            return layer_buf
-        x=self.conv2_2(x,training=training)
-        layer_buf.append(x)
-        if scale < 5:
-            return layer_buf
-        x=self.conv3_1(x,training=training)
-        layer_buf.append(x)
-        if scale < 6:
-            return layer_buf
-        x=self.conv3_2(x,training=training)
-        layer_buf.append(x)
-        if scale < 7:
-            return layer_buf
-        x=self.conv3_3(x,training=training)
-        layer_buf.append(x)
-        if scale < 8:
-            return layer_buf
-        else:
-            raise ValueError("Layers Must Under 7")
 
 if __name__ == "__main__":
+    import nibabel as nib 
+    import numpy as np
+    import tensorflow as tf 
+    import math
     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
-    tf.keras.utils.set_random_seed(1)
-    tf.config.experimental.enable_op_determinism()
-    policy = tf.keras.mixed_precision.Policy('float32')
-    import time
-    x = tf.random.uniform(shape=[1,128,128,16]) 
-    x_ = tf.reshape(x,[1,128,128,16,1])
-    x_ = tf.broadcast_to(x_,[1,128,128,16,3])
-    print("********************V4 start******************")
-    V = Vgg16LayerBuf_V4(dtype=policy)
-    V.build(input_shape=None)
-    x_ = tf.transpose(x_,perm=[0,3,1,2,4])
-    m = [tf.keras.metrics.Mean() for _ in range(5)]
-    start = time.time()
-    for _ in range(100):
-        for index in range(5):
-            m[index].reset_states()
-        for index,y in enumerate(V(x_)):
-            m[index](y)
-    print(time.time()-start)
-    for index in range(5):
-        print(m[index].result().numpy())
-    start = time.time()
-    for _ in range(100):
-        for index in range(5):
-            m[index].reset_states()
-        for index,y in enumerate(V(x_)):
-            m[index](y)
-    print("time",time.time()-start)
-    for index in range(5):
-        print(m[index].result().numpy())
-    print("********************V4 end******************")
-
-    print("********************V5 start******************")
-    policy = tf.keras.mixed_precision.Policy('mixed_float16')
-    feature_maps_indicators = ((1,2,4,5),())
-    feature_maps_getter = FeatureMapsGetter(use_pooling=False,feature_maps_indicators=feature_maps_indicators,dtype=policy)
-    x_ = tf.transpose(x_,perm=[0,3,1,2,4])
-    x_ = tf.transpose(x_,perm=[0,3,1,2,4])
-    m = [tf.keras.metrics.Mean() for _ in range(5)]
-    start = time.time()
-    for _ in range(100):
-        for index in range(5):
-            m[index].reset_states()
-        for index, y in enumerate(feature_maps_getter(x_)[0][0:4]):
-            # print(len(y))
-            m[index](y)
-    print(time.time()-start)
-    for index in range(5):
-        print(m[index].result().numpy())
-    start = time.time()
-    for _ in range(100):
-        for index in range(5):
-            m[index].reset_states()
-        for index,y in enumerate(feature_maps_getter(x_)[0][0:4]):
-            m[index](y)
-    print("time",time.time()-start)
-    for index in range(5):
-        print(m[index].result().numpy())
-    print("********************V5 end******************")
-
-
-    x_  = tf.random.uniform(shape=[1,1,16,128,128]) 
-    vf = PerceptualLossExtractor(model_name="vgg16",
-                 data_format="channels_first",
-                 transform_high_dimension=True,
-                 use_pooling=True,
-                 use_feature_reco_loss=True,
-                 use_style_reco_loss=False,)
-    m =tf.keras.metrics.Mean() 
-    start = time.time()
-    for _ in range(100):
-        m.reset_states()
-        y=vf(inputs=[x_,x_])
-        m(y)
-    print(time.time()-start)
-    print(m.result().numpy())
-    start = time.time()
-    for _ in range(100):
-        m.reset_states()
-        y=vf(inputs=[x_,x_])
-        m(y)
-    print("time",time.time()-start)
-    print(m.result().numpy())
-    print("**************************************")
-
-    # y_true = tf.stack([_y_true,_y_true])
-    # y_pred = tf.stack([_y_pred,_y_pred])
-    # y_true = tf.transpose(y_true,perm=[1,0,2,3,4])
-    # y_pred = tf.transpose(y_pred,perm=[1,0,2,3,4])
-    # vf.build(input_shape=[2,4,2,128,128,3])
-    # # vf.build(input_shape=[2,2,4,128,128,3])
-    # y = vf(inputs=tf.stack([y_true,y_pred]))
-    # print(y)
-
-
-   
+    img = nib.load("D:\Datasets\BraTS\BraTS2021_new\RSNA_ASNR_MICCAI_BraTS2021_TrainingData\BraTS2021_00000\BraTS2021_00000_flair.nii.gz")
+    img = np.array(img.dataobj[:,:,:])
+    from matplotlib import pyplot as plt 
+    Z,Y,X = img.shape
+    img = tf.transpose(img,perm=[2,1,0])
+    img = img[::-1,:,:]
+    print(img.shape)
+    img = tf.reshape(img[X//2,...],[1,1,240,240])
+    img = tf.cast(img,tf.float32)
+    _min = img.numpy().min()
+    _max = img.numpy().max()
+    print(_max,_min)
+    img = (img-_min)/(_max-_min)*255.0
+    print(img.shape)
+    fmg = FeatureMapsGetter(data_format="channels_first",feature_maps_indicators=((11,12,13),()))
+    y = fmg(img)
+    print(y[0][0].shape)
+    def show_all_channels(x):
+        C = x.shape[-1]
+        h = math.ceil(math.sqrt(C))
+        w = math.ceil(math.sqrt(C))
+        assert h*w>=C
+        fig = plt.figure()
+        for c_ in range(C):
+            plt.subplot(h,w,c_+1)
+            plt.imshow(x[0,...,c_],cmap="gray")
+        plt.show()
+        plt.close()
+    show_all_channels(y[0][0])
+    show_all_channels(y[0][1])
+    show_all_channels(y[0][2])
