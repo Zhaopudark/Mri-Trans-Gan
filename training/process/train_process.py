@@ -10,7 +10,7 @@ import tensorflow as tf
 import functools
 from collections.abc import Iterable
 __all__ = [
-    "TrainProcess",
+    'TrainProcess',
 ]
 class TrainProcess():
     """
@@ -20,11 +20,11 @@ class TrainProcess():
         """
         models,optimizers 用于普遍的通用的初始化
         """
-        if hasattr(args,"xla"):
+        if hasattr(args,'xla'):
             self.xla = bool(args.xla)
         else:
             self.xla = False 
-        if hasattr(args,"mixed_precision"):
+        if hasattr(args,'mixed_precision'):
             self.mixed_precision = bool(args.mixed_precision)
         else:
             self.mixed_precision = False 
@@ -33,8 +33,8 @@ class TrainProcess():
         optmizer.apply_gradients(zip(gradient,variable))
     def _get_scaled_loss(self,optmizer,loss):
         return optmizer.get_scaled_loss(loss)
-    def _get_unscaled_gradients(self,optmizer,gradient):#
-        return optmizer.get_unscaled_gradients(gradient)
+    def _get_unscaled_gradients(self,optmizer,scared_gradient):#
+        return optmizer.get_unscaled_gradients(scared_gradient)
     def train_wrapper(self,loss_func,optimizer_list=None,variable_list=None):# 只有训练过程需要计算梯度
         """
         train_step返回loss 
@@ -45,7 +45,9 @@ class TrainProcess():
             with tf.GradientTape(persistent=True) as tape:
                 tape.watch(variable_list)
                 loss_list = loss_func(*args,**kwargs)
-            gradient_list = list(map(tape.gradient,loss_list,variable_list))
+                scared_loss_list = list(map(self._get_scaled_loss,optimizer_list,loss_list))
+            scared_gradient_list = list(map(tape.gradient,scared_loss_list,variable_list))
+            gradient_list = list(map(self._get_unscaled_gradients,optimizer_list,scared_gradient_list))
             _ = list(map(self._apply_gradients,optimizer_list,gradient_list,variable_list))
             return loss_list
         def unmixed_wrappered_func(*args,**kwargs):
@@ -74,15 +76,15 @@ class TrainProcess():
             wrappered_func = tf.function(predict_func)
         return wrappered_func
 
-if __name__ =="__main__":
+if __name__ =='__main__':
     def fun1(x):
-        print("func1")
+        print('func1')
         return x 
     def fun2(x,y):
-        print("func2")
+        print('func2')
         return x+y 
     def fun3(x,y,z):
-        print("func3")
+        print('func3')
         return x+y+z
     model_list = [1,2]
     optimizer_list = [4,5]

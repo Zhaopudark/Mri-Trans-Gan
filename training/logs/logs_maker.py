@@ -12,7 +12,7 @@ sys.path.append(os.path.join(base))
 from _log4local import LocalLogsMaker as _LocalLogsMaker
 from _log4tensorboard import SummaryMaker as _SummaryMaker
 __all__ = [
-    "LogsMaker",
+    'LogsMaker',
 ]
 class LogsMaker():
     """
@@ -38,13 +38,13 @@ class LogsMaker():
         else:
             _path = path[0::]
         tmp_dict = {}
-        tmp_dict["train"] = _path+"/train_logs"
-        tmp_dict["test"] = _path+"/test_logs"
+        tmp_dict['train'] = _path+"/train_logs"
+        tmp_dict['test'] = _path+"/test_logs"
         return tmp_dict
     def _get_time_stamp(self):
-        if "time" not in self._time_stamp_register.keys():
-            self._time_stamp_register["time"] = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        return self._time_stamp_register["time"]
+        if 'time' not in self._time_stamp_register.keys():
+            self._time_stamp_register['time'] = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        return self._time_stamp_register['time']
     def wirte(self,training,log_types,log_contents):
         time_stamp = self._get_time_stamp()
         self.local_logs_maker.write(training,time_stamp,log_types,log_contents)   

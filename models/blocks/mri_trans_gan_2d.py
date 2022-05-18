@@ -1,19 +1,17 @@
 __all__ = [
-    "Conv7S1",
-    "DownSampling",
-    "ResBlocks",
-    "UpSampling",    
-    "Conv4S2",
-    "Conv4S1", 
+    'Conv7S1',
+    'DownSampling',
+    'ResBlocks',
+    'UpSampling',    
+    'Conv4S2',
+    'Conv4S1', 
 ]
 import sys
 import os
 import tensorflow as tf
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(base,'../'))
-from craft.convolutions.conv2d import Conv2D,UpSampalingConv2D
-from craft.normalizations import InstanceNormalization
-from craft.activations import Activation
+from models.layers.convolutions import Conv2D,UpSampalingConv2D
+from models.layers.normalizations import InstanceNormalization
+from models.layers.activations import Activation
 """
 Cycle GAN Generator blocks
 """
@@ -23,7 +21,7 @@ class Conv7S1(tf.keras.Model):#c7s1_k
                  filters,
                  spectral_normalization=False,
                  use_bias=False,
-                 activation="relu",
+                 activation='relu',
                  specific_out_dtype=None,
                  name=None,
                  dtype=None,
@@ -32,7 +30,7 @@ class Conv7S1(tf.keras.Model):#c7s1_k
         self.l1_conv = Conv2D(filters=filters,
                               kernel_size=[7,7],
                               strides=[1,1],
-                              padding="REFLECT",
+                              padding='REFLECT',
                               use_bias=use_bias,
                               spectral_normalization=spectral_normalization,
                               dtype=dtype,
@@ -68,16 +66,16 @@ class DownSampling(tf.keras.Model):#dk
         self.l1_conv = Conv2D(filters=filters,
                               kernel_size=[3,3],
                               strides=[2,2],
-                              padding="REFLECT",
+                              padding='REFLECT',
                               use_bias=use_bias,
                               spectral_normalization=spectral_normalization,
                               dtype=dtype,
                               **kwargs)
         self.l2_norm = InstanceNormalization(dtype=dtype)
         if specific_out_dtype is None:
-            self.l3_activation = Activation("relu",dtype=dtype)
+            self.l3_activation = Activation('relu',dtype=dtype)
         else:
-            self.l3_activation = Activation("relu",dtype=specific_out_dtype)
+            self.l3_activation = Activation('relu',dtype=specific_out_dtype)
     def build(self,input_shape):
         flow_shape=self.l1_conv.build(input_shape=input_shape)
         flow_shape=self.l2_norm.build(input_shape=flow_shape)
@@ -104,26 +102,26 @@ class ResBlock(tf.keras.Model):#rk
         self.l1_conv= Conv2D(filters=filters,
                              kernel_size=[3,3],
                              strides=[1,1],
-                             padding="REFLECT",
+                             padding='REFLECT',
                              use_bias=use_bias,
                              spectral_normalization=spectral_normalization,
                              dtype=dtype,
                              **kwargs)
         self.l2_norm = InstanceNormalization(dtype=dtype)
-        self.l3_activation =Activation("relu",dtype=dtype)
+        self.l3_activation =Activation('relu',dtype=dtype)
         self.l4_conv= Conv2D(filters=filters,
                              kernel_size=[3,3],
                              strides=[1,1],
-                             padding="REFLECT",
+                             padding='REFLECT',
                              use_bias=use_bias,
                              spectral_normalization=spectral_normalization,
                              dtype=dtype,
                              **kwargs)
         self.l5_norm = InstanceNormalization(dtype=dtype)
         if specific_out_dtype is None:
-            self.l6_activation = Activation("linear",dtype=dtype)
+            self.l6_activation = Activation('linear',dtype=dtype)
         else:
-            self.l6_activation = Activation("linear",dtype=specific_out_dtype)
+            self.l6_activation = Activation('linear',dtype=specific_out_dtype)
     def build(self,input_shape):
         flow_shape=self.l1_conv.build(input_shape=input_shape)
         flow_shape=self.l2_norm.build(input_shape=flow_shape)
@@ -186,16 +184,16 @@ class UpSampling(tf.keras.Model):#uk
         self.l1_up= UpSampalingConv2D(filters=filters,
                                       kernel_size=[3,3],
                                       strides=[2,2],
-                                      padding="SAME",
+                                      padding='SAME',
                                       use_bias=use_bias,
                                       spectral_normalization=spectral_normalization,
                                       dtype=dtype,
                                       **kwargs)
         self.l2_norm = InstanceNormalization(dtype=dtype)
         if specific_out_dtype is None:
-            self.l3_activation = Activation("relu",dtype=dtype)
+            self.l3_activation = Activation('relu',dtype=dtype)
         else:
-            self.l3_activation = Activation("relu",dtype=specific_out_dtype)
+            self.l3_activation = Activation('relu',dtype=specific_out_dtype)
     def build(self,input_shape,output_shape=None):
         flow_shape=self.l1_up.build(input_shape=input_shape)
         flow_shape=self.l2_norm.build(input_shape=flow_shape)
@@ -235,11 +233,11 @@ class Conv4S2(tf.keras.Model):#ck
         if norm:
             self.l2_norm = InstanceNormalization(dtype=dtype)
         else:
-            self.l2_norm = Activation("linear",dtype=dtype)
+            self.l2_norm = Activation('linear',dtype=dtype)
         if specific_out_dtype is None:
-            self.l3_activation = Activation("leaky_relu",alpha=0.2,dtype=dtype)
+            self.l3_activation = Activation('leaky_relu',alpha=0.2,dtype=dtype)
         else:
-            self.l3_activation = Activation("leaky_relu",alpha=0.2,dtype=specific_out_dtype)
+            self.l3_activation = Activation('leaky_relu',alpha=0.2,dtype=specific_out_dtype)
     def build(self,input_shape):
         flow_shape=self.l1_conv.build(input_shape=input_shape)
         flow_shape=self.l2_norm.build(input_shape=flow_shape)
@@ -271,9 +269,9 @@ class Conv4S1(tf.keras.Model):#ck last
                              dtype=dtype,
                              **kwargs)
         if use_sigmoid:
-            tmp_activation_name = "sigmoid"
+            tmp_activation_name = 'sigmoid'
         else:
-            tmp_activation_name = "linear"
+            tmp_activation_name = 'linear'
         if specific_out_dtype is None:
             self.l2_activation = Activation(tmp_activation_name,dtype=dtype)
         else:

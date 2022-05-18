@@ -1,3 +1,3 @@
 __all__ = [
-    "model_selector"
+    'model_selector'
 ]

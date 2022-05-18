@@ -1,13 +1,13 @@
 import tensorflow as tf
 __all__ = [ 
-    "CustomDecay",
+    'CustomDecay',
 ]
 class CustomDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
     def __init__(self,initial_learning_rate,decay_steps,decay_rate,start_step=0,staircase=False,name=None):
         super(CustomDecay,self).__init__()
-        self.initial_learning_rate = tf.constant(initial_learning_rate,dtype=tf.float32)
-        self.decay_steps = tf.constant(decay_steps,dtype=tf.int32)
-        self.decay_rate = tf.constant(decay_rate,dtype=tf.float32)
+        self.initial_learning_rate = tf.convert_to_tensor(initial_learning_rate,dtype=tf.float32)
+        self.decay_steps = tf.convert_to_tensor(decay_steps,dtype=tf.int32)
+        self.decay_rate = tf.convert_to_tensor(decay_rate,dtype=tf.float32)
         self.staircase = staircase
         self.start_step = start_step
         self.name = name
@@ -22,7 +22,7 @@ class CustomDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
         return decayed_learning_rate
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     import os 
     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
@@ -54,7 +54,7 @@ if __name__ == "__main__":
         # buf2=[30个第三w2引用(是同一个Variable,值为第30次的值)] 所以buf1-buf2 != 0 
         # 因此buf1 buf2 应当记录constant
         checkpoint_directory = "./tmp/training_checkpoints"
-        checkpoint_prefix = os.path.join(checkpoint_directory, "ckpt")
+        checkpoint_prefix = os.path.join(checkpoint_directory, 'ckpt')
         checkpoint = tf.train.Checkpoint(optimizer=opt,model=w1)
         # checkpoint.write(file_prefix=checkpoint_prefix)
         checkpoint.restore(tf.train.latest_checkpoint(checkpoint_directory))
@@ -92,6 +92,6 @@ if __name__ == "__main__":
     for item1,item2 in zip(buf1,buf2):
         _sum += tf.reduce_sum(item1-item2)
     print(_sum)
-    print("测试前需要清理干净作为本次实验缓存的checkpoint目录")
+    print('$1')
     print("测试schedule是否可以落实 如果sum=0 表示带有schedule的optimizers可以顺利保存内部的step(即iteration)并在下次求导时正确应用schedule",_sum)
     

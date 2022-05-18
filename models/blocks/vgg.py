@@ -1,31 +1,24 @@
-import sys
-import os
-__all__ = [
-    "Vgg16LayerBuf_V2",
-    "Vgg16LayerBuf_V4",
-]
 import itertools
 import logging
 from typeguard import typechecked
-from typing import List,Union,Tuple,Iterable
+from typing import Iterable
 import functools
-import tensorflow as tf
 import numpy as np 
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(base,'../'))
-sys.path.append(os.path.join(base,'../../'))
-from models.craft.convolutions.conv2d import Conv2DVgg
-from models.craft.convolutions.conv3d import Vgg2Conv3D
-from models.craft.denses import DenseVgg
+import tensorflow as tf
+from enum import Enum
 from training.losses._image_losses import LossAcrossListWrapper
 from training.losses._image_losses import MeanFeatureReconstructionError
 from training.losses._image_losses import MeanStyleReconstructionError
 from training.losses._image_losses import MeanVolumeGradientError
 from training.losses._image_losses import MeanAbsoluteError
 from training.losses._image_losses import MeanSquaredError
-import time
 
-class FeatureMapsGetter(tf.keras.Model):
+
+class SequenceLayersManager():
+    def __init__(self,model,input_layer_index,pooling_layer_indexes) -> None:
+        pass
+
+class FeatureMapsGetter(tf.keras.layers.Layer):
     """
     Get feature maps of an input based on an existing linear structure model.
     `linear structure` means we can easily locate the desired layers' feature map output by given index.
@@ -36,7 +29,7 @@ class FeatureMapsGetter(tf.keras.Model):
     Args:
         name: name
         model_name: specify the basic linear structure model, currently, only support vgg16 and vgg19.
-        data_format: indicate input's data_format, supporting "channels_last" or "channels_first". 
+        data_format: indicate input's data_format, supporting 'channels_last' or 'channels_first'. 
         use_pooling:
             If False, pooling layers in basic model will be skipped when inference.
             If True, pooling layers in basic model will be used as normal when inference.
@@ -52,94 +45,92 @@ class FeatureMapsGetter(tf.keras.Model):
     """
     @typechecked
     def __init__(self,
-                 name:Union[None,str]=None,
-                 model_name:str="vgg16",
-                 data_format:str="channels_last",
+                 name:None|str=None,
+                 model_name:str='vgg16',
+                 data_format:str='channels_last',
                  use_pooling:bool=False,
-                 feature_maps_indicators:Tuple[Tuple,...]=((0,),),
+                 feature_maps_indicators:tuple[tuple[int,...],...]=((0,),),
                  **kwargs):
         if name is not None:
-            name = name+"_"+model_name+"_feature_maps_getter"
+            name = f"{name}_{model_name}_feature_maps_getter"
         else:
-            name = model_name+"_feature_maps_getter"
-        if "dtype" in kwargs.keys() and kwargs["dtype"] is not None:
+            name = f"{model_name}_feature_maps_getter"
+        if 'dtype' in kwargs.keys() and kwargs['dtype'] is not None:
             logging.warning("""
                 Setting FeatureMapsGetter's dtype to a specific dtype but not `None` may fail to meet the user's expectations. Since the actually dtype should follow 
                 model's practical dtype. For numerical stability, we mandatorily set dtype to None. 
                 """)
-        kwargs["dtype"] = None
+        kwargs['dtype'] = None
         super().__init__(name=name,**kwargs)
 
         _model_name = model_name.lower()
-        if _model_name == "vgg16":
+        if _model_name == 'vgg16':
             self._model = tf.keras.applications.vgg16.VGG16(
                             include_top=False, weights='imagenet', input_tensor=None,
                             input_shape=None, pooling=None, classes=1000,
                             classifier_activation='softmax'
                             )
-            self._preprocess_input = functools.partial(tf.keras.applications.vgg16.preprocess_input,data_format="channels_last")
+            self._preprocess_input = functools.partial(tf.keras.applications.vgg16.preprocess_input,data_format='channels_last')
             self._model_meta_data = {
-                "input_layer_index": 0,
-                "pooling_layer_indexes": [3, 6, 10, 14, 18],
-                "forced_pooling_threshold": 6,
-                "supported_data_format": "channels_last",
-                "supported_data_shape": [None, None, None, 3],
+                'input_layer_index': 0,
+                'pooling_layer_indexes': [3, 6, 10, 14, 18],
+                'forced_pooling_threshold': 6,
+                'supported_data_format': 'channels_last',
+                'supported_data_shape': [None, None, None, 3],
             }
 
-        elif _model_name == "vgg19":
+        elif _model_name == 'vgg19':
             self._model = tf.keras.applications.vgg19.VGG19(
                             include_top=False, weights='imagenet', input_tensor=None,
                             input_shape=None, pooling=None, classes=1000,
                             classifier_activation='softmax'
                             )
-            self._preprocess_input = functools.partial(tf.keras.applications.vgg19.preprocess_input,data_format="channels_last")
+            self._preprocess_input = functools.partial(tf.keras.applications.vgg19.preprocess_input,data_format='channels_last')
             self._model_meta_data = {
-                "input_layer_index": 0,
-                "pooling_layer_indexes": [3, 6, 11, 16, 21],
-                "forced_pooling_threshold": 6,
+                'input_layer_index': 0,
+                'pooling_layer_indexes': [3, 6, 11, 16, 21],
+                'forced_pooling_threshold': 6,
+                'supported_data_format': 'channels_last',
+                'supported_data_shape': [None, None, None, 3],
             }
-
-            self._model_meta_data["supported_data_format"] = "channels_last"
-            self._model_meta_data["supported_data_shape"] = [None,None,None,3]
         else:
-            raise ValueError("{} hasn't been supported currently.".format(model_name))
+            raise ValueError(f"{model_name} hasn't been supported currently.")
         self._model.trainable = False
 
         self._additional_meta_data = {}
         self._data_format = data_format.lower() #  inputs' data_format, received by call()
         self._normalize_input_data_format = self._normalize_input_data_format_wrapper(
             self._data_format,
-            self._model_meta_data["supported_data_format"])
+            self._model_meta_data['supported_data_format'])
 
-        self._additional_meta_data["batch_index"] = 0 # the precondition
-        if self._data_format =="channels_last":
-            self._additional_meta_data["channel_index"] = -1
-            self._additional_meta_data["reperm_target_indexes"] = [-3,-2] # H,W in [B,...,H,W,C] 
+        self._additional_meta_data['batch_index'] = 0 # the precondition
+        if self._data_format =='channels_last':
+            self._additional_meta_data['channel_index'] = -1
+            self._additional_meta_data['reperm_target_indexes'] = [-3,-2] # H,W in [B,...,H,W,C] 
         else:
-            self._additional_meta_data["channel_index"] = 1
-            self._additional_meta_data["reperm_target_indexes"] = [-2,-1] # H,W in [B,C,...,H,W]
-        self._additional_meta_data["reperm_fixed_indexes"] = [self._additional_meta_data["batch_index"],self._additional_meta_data["channel_index"]] # B,C
-        self._additional_meta_data["reshape_fixed_indexes"] = self._additional_meta_data["reperm_target_indexes"]+[self._additional_meta_data["channel_index"]] # H W C
+            self._additional_meta_data['channel_index'] = 1
+            self._additional_meta_data['reperm_target_indexes'] = [-2,-1] # H,W in [B,C,...,H,W]
+        self._additional_meta_data['reperm_fixed_indexes'] = [self._additional_meta_data['batch_index'],self._additional_meta_data['channel_index']] # B,C
+        self._additional_meta_data['reshape_fixed_indexes'] = self._additional_meta_data['reperm_target_indexes']+[self._additional_meta_data['channel_index']] # H W C
 
         self._feature_maps_indicators,_layer_indexes_set = self._sort_indicators(feature_maps_indicators)
         self._fused_index = max(_layer_indexes_set) if _layer_indexes_set else 0
 
         use_pooling = self._check_if_forced_use_pooling(
             concerned_index=self._fused_index,
-            threshold=self._model_meta_data["forced_pooling_threshold"],
+            threshold=self._model_meta_data['forced_pooling_threshold'],
             use_pooling=use_pooling)
 
-        self._additional_meta_data["valid_layer_indexes"] = self._grab_valid_indexes(
+        self._additional_meta_data['valid_layer_indexes'] = self._grab_valid_indexes(
             original_indexes=list(range(len(self._model.layers))),
-            invalid_indexs=[self._model_meta_data["input_layer_index"],
-                            [] if use_pooling else self._model_meta_data["pooling_layer_indexes"]])
+            invalid_indexs=[self._model_meta_data['input_layer_index'],
+                            [] if use_pooling else self._model_meta_data['pooling_layer_indexes']])
 
         self._check_if_within_valid_indexes(
             target_indexes=_layer_indexes_set ,
-            valid_indexes=self._additional_meta_data["valid_layer_indexes"])
+            valid_indexes=self._additional_meta_data['valid_layer_indexes'])
 
-        
-    def _sort_indicators(self,indicators:Tuple[Tuple,...]):
+    def _sort_indicators(self,indicators:tuple[tuple[int,...],...]):
         """
         sort indicators (a 2D tuple of integer)
         additionally, give out a sorted set of all elements in the indicators
@@ -151,24 +142,20 @@ class FeatureMapsGetter(tf.keras.Model):
             for item in indicator:
                 element_set.add(item)
         return tuple(indicators_buf),sorted(element_set)
-    @typechecked
+    
     def _check_if_forced_use_pooling(self,concerned_index:int,threshold:int,use_pooling:bool):
-        if concerned_index >= threshold:
-            # should forced use pooling
-            if use_pooling:
-                return use_pooling
-            else:
-                logging.warning(
-                """
-                To avoid huge amount of calculation, when the index of layer, which give out wanted feature map, reaches or exceed the index threshold {},
-                the basic model will use pooling mandatorily, and `use_pooling` flag set by user will be ignored.
-                """.format(threshold))
-                return True
-        else:
-            # no need to forced use pooling
+        if use_pooling:
             return use_pooling
-    @typechecked
-    def _grab_valid_indexes(self,original_indexes:List[int],invalid_indexs:Iterable):
+        if concerned_index < threshold:
+            return use_pooling
+        logging.warning(
+            f"""
+                To avoid huge amount of calculation, when the index of layer, which give out wanted feature map, reaches or exceed the index threshold {threshold},
+                the basic model will use pooling mandatorily, and `use_pooling` flag set by user will be ignored.
+                """)
+        return True
+
+    def _grab_valid_indexes(self,original_indexes:list[int],invalid_indexs:Iterable):
         def _flatten_complex_iter_rable_to_list_of_int(inputs):
             buf = set()
             for item in inputs:
@@ -178,19 +165,20 @@ class FeatureMapsGetter(tf.keras.Model):
                     for inner_item in _flatten_complex_iter_rable_to_list_of_int(item):
                         buf.add(inner_item)
                 else:
-                    raise ValueError("item should be an iterable object or integer, not {}.".format(item))
+                    raise ValueError(f"item should be an iterable object or integer, not {item}.")
             return sorted(buf)
         original_indexes = original_indexes[:]
         invalid_indexs = _flatten_complex_iter_rable_to_list_of_int(invalid_indexs)
         for index in invalid_indexs:
             original_indexes.remove(index)
         return original_indexes
-    @typechecked
+
     def _check_if_within_valid_indexes(self,target_indexes:Iterable,valid_indexes:Iterable):
         for index in target_indexes:
             if index not in valid_indexes:
-                raise ValueError("index `{}` in  are not in valid indexes.".format(index))
-    def _dist_tensor_to_2D_container(self,tensor,index,indicator,container):
+                raise ValueError(f"index `{index}` in  are not in valid indexes.")
+
+    def _dist_tensor_to_2D_container(self,tensor,index:int,indicator:tuple[tuple[int,...],...],container:tuple[list,...]):
         """
         According to the cooperation between index and 2-D indicator,
         put a tensor to each row of a 2D buffer, i.e., a 2-D list, which can be regarded as a container or vector.
@@ -200,13 +188,10 @@ class FeatureMapsGetter(tf.keras.Model):
 
         i.e.,`tensor` will be repeated in each row of container if the corresponding `index` is in indicator.
         """
-        container = container[:] # copy
         for row_index in range(len(container)):
             if index in indicator[row_index]: # 
-                tmp_row = container[row_index][:]
-                tmp_row.append(tensor)
-                container[row_index] = tmp_row
-        return container
+                container[row_index].append(tensor)
+
     def _normalize_input(self,inputs):
         """
         Normalize input, make it suitable for base model. 
@@ -234,13 +219,12 @@ class FeatureMapsGetter(tf.keras.Model):
             3. broadcast
             4. preprocess input by base model's preprocess_input function
         """
-        inputs = self._normalize_input_data_format(inputs)  # then the channels dimension index will be the same to self._meta_data["channel_index"]
-        inputs = self._reshape_and_keep_fixed_dimensions(inputs,self._additional_meta_data["reshape_fixed_indexes"]) # get supported_data_shape
+        inputs = self._normalize_input_data_format(inputs)  # then the channels dimension index will be the same to self._meta_data['channel_index']
+        inputs = self._reshape_and_keep_fixed_dimensions(inputs,self._additional_meta_data['reshape_fixed_indexes']) # get supported_data_shape
         shape = inputs.shape.as_list()
-        for i,(in_shape,ex_shape) in enumerate(zip(shape,self._model_meta_data["supported_data_shape"])): # ex_shape expected_shape
-            if ex_shape is not None:
-                if in_shape != ex_shape:
-                    shape[i] = ex_shape
+        for i,(in_shape,ex_shape) in enumerate(zip(shape,self._model_meta_data['supported_data_shape'])): # ex_shape expected_shape
+            if (ex_shape is not None) and (in_shape != ex_shape):
+                shape[i] = ex_shape
         inputs = tf.broadcast_to(inputs,shape)
         return self._preprocess_input(inputs)
     def _normalize_input_data_format_wrapper(self,data_format,supported_data_format):
@@ -264,12 +248,12 @@ class FeatureMapsGetter(tf.keras.Model):
         def _do_nothing(inputs):
             return inputs
         if data_format != supported_data_format:
-            if data_format  == "channels_first":
+            if data_format  == 'channels_first':
                 return _first_to_last
-            elif data_format  == "channels_last":
+            elif data_format  == 'channels_last':
                 return _last_to_first
             else:
-                raise ValueError("Data_format should be one of channels_first or channels_last, not {}.".format(data_format))
+                raise ValueError(f"Data_format should be one of channels_first or channels_last, not {data_format}.")
         else:
             return _do_nothing
         
@@ -324,7 +308,7 @@ class FeatureMapsGetter(tf.keras.Model):
                         ...
                         [0,1,2,...,N-4,{N-3},{N-2},N-1]
                     So perm's permutation and combination has C_{N-len(perm_fixed_indexes)}^{len(perm_target_indexes)} results.
-                    Each result leads to a excepted re-permutation of tensor。
+                    Each result leads to a excepted re-permutation of tensor
             Final output is a list of these excepted re-permutation tensors.
         Args:
             tensor: the original tensor
@@ -413,8 +397,8 @@ class FeatureMapsGetter(tf.keras.Model):
         A more concreate example:
             basic model is vgg16
             input shape is [7,4,5,6,3]
-            self._meta_data["reperm_target_indexes"] = [-3,-2]
-            self._meta_data["reperm_fixed_indexes"] = [0,-1]
+            self._meta_data['reperm_target_indexes'] = [-3,-2]
+            self._meta_data['reperm_fixed_indexes'] = [0,-1]
             inputs_list = [tensor1,tensor2,tensor3]
             tensor1 is in shape [7,6,4,5,3]
             tensor2 is in shape [7,5,4,6,3]
@@ -424,8 +408,8 @@ class FeatureMapsGetter(tf.keras.Model):
             transforming result is just inputs_list     
         """       
         inputs_list = self._tensor_repermutation(
-                        inputs,reperm_target_indexes=self._additional_meta_data["reperm_target_indexes"],
-                        reperm_fixed_indexes=self._additional_meta_data["reperm_fixed_indexes"])
+                        inputs,reperm_target_indexes=self._additional_meta_data['reperm_target_indexes'],
+                        reperm_fixed_indexes=self._additional_meta_data['reperm_fixed_indexes'])
         try:
             new_inputs = tf.concat(inputs_list,axis=0) # if elements in inputs_list have the same shape, concat then in batch dimension for speed up
         except (ValueError,tf.errors.InvalidArgumentError):
@@ -433,21 +417,23 @@ class FeatureMapsGetter(tf.keras.Model):
         return new_inputs
     def summary(self):
         self._model.summary()
+    def build(self,input_shape):
+        super().build(input_shape)
     def call(self,inputs,**kwargs):
-        x = self._normalize_input(inputs)
-        output_buf = [[],]*len(self._feature_maps_indicators)
-        for index in self._additional_meta_data["valid_layer_indexes"]:
+        tf.debugging.assert_greater_equal(tf.reduce_min(inputs),0.0,message=f"{self.name}'s inputs should within [0.0,1.0]")
+        tf.debugging.assert_less_equal(tf.reduce_max(inputs),1.0,message=f"{self.name}'s inputs should within [0.0,1.0]")
+        x = self._normalize_input(inputs*255.0)
+        output_buf = tuple([] for _ in range(len(self._feature_maps_indicators)))   
+        for index in self._additional_meta_data['valid_layer_indexes']:
             _layer  = self._model.get_layer(index=index)
             y = _layer(x,**kwargs)
-            output_buf = self._dist_tensor_to_2D_container(tensor=y,
-                        index=index,indicator=self._feature_maps_indicators,
-                        container=output_buf)
+            self._dist_tensor_to_2D_container(tensor=y/255.0,index=index,indicator=self._feature_maps_indicators,container=output_buf)
             x = y
             if index >= self._fused_index:
                 break
         return output_buf
 
-class PerceptualLossExtractor(tf.keras.Model):
+class PerceptualLossExtractor(tf.keras.layers.Layer):
     """
     see: https://arxiv.org/pdf/1603.08155.pdf
 
@@ -474,7 +460,7 @@ class PerceptualLossExtractor(tf.keras.Model):
         style_reco_sample_weight:for style reconstruction loss, it indicate the sample_weight of the loss between each tow feature maps of inputs[0] and inputs[1]
     """
     @typechecked
-    def __init__(self, name:Union[None,str]=None, model_name:str="vgg16", data_format:str="channels_last", transform_high_dimension:bool=True, use_pooling:bool=True, use_feature_reco_loss:bool=True, use_style_reco_loss:bool=True, feature_reco_index: List[int] = None, feature_reco_sample_weight: List[Union[int,float]] = None, style_reco_index: List[int] = None, style_reco_sample_weight: List[Union[int,float]] = None, **kwargs):
+    def __init__(self, name:None|str=None, model_name:str='vgg16', data_format:str='channels_last', transform_high_dimension:bool=True, use_pooling:bool=True, use_feature_reco_loss:bool=True, use_style_reco_loss:bool=True, feature_reco_index: list[int] = None, feature_reco_sample_weight: list[int|float] = None, style_reco_index: list[int] = None, style_reco_sample_weight: list[int|float] = None, **kwargs):
         if feature_reco_index is None:
             feature_reco_index = [5,]
         if feature_reco_sample_weight is None:
@@ -484,35 +470,36 @@ class PerceptualLossExtractor(tf.keras.Model):
         if style_reco_sample_weight is None:
             style_reco_sample_weight = [1,1,1,1]
         if name is not None:
-            name = f'{name}_{model_name}_perceptual_loss_extractor'
+            name = f"{name}_{model_name}_perceptual_loss_extractor"
         else:
-            name = f'{model_name}_perceptual_loss_extractor'
-        if "dtype" in kwargs.keys() and kwargs["dtype"] is not None:
+            name = f"{model_name}_perceptual_loss_extractor"
+        if 'dtype' in kwargs.keys() and kwargs['dtype'] is not None:
             logging.warning("""
                 Setting FeatureMapsGetter's dtype to a specific dtype but not `None` may fail to meet the user's expectations. Since the actually dtype should follow 
                 model's practical dtype. For numerical stability, we mandatorily set dtype to None. 
                 """)
-        kwargs["dtype"] = None
+        kwargs['dtype'] = None
         super(PerceptualLossExtractor,self).__init__(name=name,**kwargs)
 
         self.data_format = data_format.lower() #  inputs' data_format, received by call()
-        if self.data_format not in ["channels_first","channels_last"]:
-            raise ValueError("data_format of PerceptualLoss should be 'channels_last' or 'channels_first', not {}.".format(data_format))
+        if self.data_format not in ['channels_first','channels_last']:
+            raise ValueError(f"data_format of PerceptualLoss should be `channels_last` or `channels_first`, not {data_format}.")
         self.transform_high_dimension = transform_high_dimension
         self.use_feature_reco_loss = use_feature_reco_loss
         self.use_style_reco_loss  = use_style_reco_loss
-        feature_reco_loss = MeanFeatureReconstructionError(mode="L2")
+        feature_reco_loss = MeanFeatureReconstructionError(mode='L2')
         self.feature_reco_loss = LossAcrossListWrapper(feature_reco_loss)
         self.feature_reco_index = feature_reco_index # relu3_3
         self.feature_reco_sample_weight = feature_reco_sample_weight
         assert (len(self.feature_reco_index)==len(self.feature_reco_sample_weight))
-        style_reco_loss = MeanStyleReconstructionError(data_format="channels_last")
+        style_reco_loss = MeanStyleReconstructionError(data_format='channels_last')
         self.style_reco_loss = LossAcrossListWrapper(style_reco_loss)
         self.style_reco_index = style_reco_index # relu1_2 relu2_2 relu3_3 relu4_3
         self.style_reco_sample_weight = style_reco_sample_weight
         assert (len(self.style_reco_index)==len(self.style_reco_sample_weight))
 
-        feature_maps_indicators=(tuple(feature_reco_index) if use_feature_reco_loss else tuple([]),tuple(style_reco_index) if use_style_reco_loss else tuple([]))
+        feature_maps_indicators=(tuple(feature_reco_index) if use_feature_reco_loss else (),
+                                 tuple(style_reco_index) if use_style_reco_loss else ())
         self.feature_maps_getter = FeatureMapsGetter(name=name,
                                     model_name=model_name,
                                     data_format=data_format,
@@ -548,18 +535,12 @@ class PerceptualLossExtractor(tf.keras.Model):
         return (featuere_maps_for_feat,featuere_maps_for_style,feature_reco_sample_weight,style_reco_sample_weight)
     def build(self,input_shape):
         super().build(input_shape) 
-        ## disable input shape check to speed up
-        # input_shape = tf.TensorShape(input_shape)
-        # assert input_shape[0]==2
-        # input_shape = [None,]*(len(input_shape)-1)
-        # input_shape = tuple([2]+input_shape)
-        # self.input_spec = tf.keras.layers.InputSpec(shape=input_shape)  # input_spec check input shape mandatorily, so for different input shape, there should be different instance of this class
     def call(self,inputs,**kwargs):
         if self.transform_high_dimension:
             inputs_true,inputs_pred = self.feature_maps_getter.transform_high_dimension_inputs(inputs[0]),self.feature_maps_getter.transform_high_dimension_inputs(inputs[1])
         else:
             inputs_true,inputs_pred = inputs[0],inputs[1]
-        kwargs["training"] = False # force un-training
+        kwargs['training'] = False # force un-training
 
         loss = 0.0
         if (self.use_feature_reco_loss)or(self.use_style_reco_loss):
@@ -569,8 +550,10 @@ class PerceptualLossExtractor(tf.keras.Model):
             pred_featuere_maps_for_feat,pred_featuere_maps_for_style,\
                 pred_feature_reco_sample_weight,pred_style_reco_sample_weight =\
                     self.get_feature_maps(inputs_pred,self.feature_reco_sample_weight,self.style_reco_sample_weight,**kwargs)
-            assert (feature_reco_sample_weight:=true_feature_reco_sample_weight)==pred_feature_reco_sample_weight
-            assert (style_reco_sample_weight:=true_style_reco_sample_weight)==pred_style_reco_sample_weight
+            feature_reco_sample_weight=true_feature_reco_sample_weight
+            style_reco_sample_weight=true_style_reco_sample_weight
+            tf.debugging.assert_equal(true_feature_reco_sample_weight,pred_feature_reco_sample_weight)
+            tf.debugging.assert_equal(true_style_reco_sample_weight,pred_style_reco_sample_weight)
             if self.use_feature_reco_loss:
                 feature_reco_loss = self.feature_reco_loss(
                                         true_featuere_maps_for_feat,
@@ -582,16 +565,15 @@ class PerceptualLossExtractor(tf.keras.Model):
                                         true_featuere_maps_for_style,
                                         pred_featuere_maps_for_style,
                                         style_reco_sample_weight)
-                loss += style_reco_loss              
+                loss += style_reco_loss
         return loss
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     import nibabel as nib 
-    import numpy as np
-    import tensorflow as tf 
     import math
     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
+    tf.config.run_functions_eagerly(True)
     img = nib.load("D:\Datasets\BraTS\BraTS2021_new\RSNA_ASNR_MICCAI_BraTS2021_TrainingData\BraTS2021_00000\BraTS2021_00000_flair.nii.gz")
     img = np.array(img.dataobj[:,:,:])
     from matplotlib import pyplot as plt 
@@ -604,22 +586,33 @@ if __name__ == "__main__":
     _min = img.numpy().min()
     _max = img.numpy().max()
     print(_max,_min)
-    img = (img-_min)/(_max-_min)*255.0
+    img = (img-_min)/(_max-_min)
     print(img.shape)
-    fmg = FeatureMapsGetter(data_format="channels_first",feature_maps_indicators=((11,12,13),()))
+    fmg = FeatureMapsGetter(data_format='channels_first',feature_maps_indicators=((11,12,13),()))
+    print(tf.config.optimizer.get_experimental_options())
+    fmg.build([1,240,240,3])
+    # print(fmg.dtype)
     y = fmg(img)
-    print(y[0][0].shape)
-    def show_all_channels(x):
-        C = x.shape[-1]
-        h = math.ceil(math.sqrt(C))
-        w = math.ceil(math.sqrt(C))
-        assert h*w>=C
-        fig = plt.figure()
-        for c_ in range(C):
-            plt.subplot(h,w,c_+1)
-            plt.imshow(x[0,...,c_],cmap="gray")
-        plt.show()
-        plt.close()
-    show_all_channels(y[0][0])
-    show_all_channels(y[0][1])
-    show_all_channels(y[0][2])
+    # print(tf.config.optimizer.get_experimental_options())
+    # y = fmg(img)
+    # print(y[0][0].shape)
+    # def show_all_channels(x):
+    #     C = x.shape[-1]
+    #     h = math.ceil(math.sqrt(C))
+    #     w = math.ceil(math.sqrt(C))
+    #     assert h*w>=C
+    #     fig = plt.figure()
+    #     for c_ in range(C):
+    #         plt.subplot(h,w,c_+1)
+    #         plt.imshow(x[0,...,c_],cmap='gray')
+    #     plt.show()
+    #     plt.close()
+    # # show_all_channels(y[0][0])
+    # # show_all_channels(y[0][1])
+    # # show_all_channels(y[0][2])
+    # for item in y[0]:
+    #     print(tf.reduce_mean(item))
+    # vf = PerceptualLossExtractor()
+    # x_true = _x_true = tf.random.uniform(shape=[1,16,128,128,1],minval=0.0,maxval=1.0)
+    # x_pred = _x_pred = tf.random.uniform(shape=[1,16,128,128,1],minval=0.0,maxval=1.0) 
+

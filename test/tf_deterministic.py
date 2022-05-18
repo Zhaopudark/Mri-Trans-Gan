@@ -15,8 +15,8 @@ y_test = tf.one_hot(y_test,depth=10)
 print(x_train.shape,y_train.shape,x_test.shape,y_test.shape)
 print(y_train[0])
 # # Add a channels dimension
-x_train = x_train[..., tf.newaxis].astype("float32")
-x_test = x_test[..., tf.newaxis].astype("float32")
+x_train = x_train[..., tf.newaxis].astype('float32')
+x_test = x_test[..., tf.newaxis].astype('float32')
 print(x_train.shape, x_test.shape)
 train_ds = tf.data.Dataset.from_tensor_slices(
     (x_train, y_train)).shuffle(10000).batch(32)
@@ -90,10 +90,10 @@ for epoch in range(EPOCHS):
     test_step(test_images, test_labels)
 
   print(
-    f'Epoch {epoch + 1}, '
-    f'Loss: {train_loss.result()}, '
-    f'Accuracy: {train_accuracy.result() * 100}, '
-    f'Test Loss: {test_loss.result()}, '
-    f'Test Accuracy: {test_accuracy.result() * 100}'
+    f"Epoch {epoch + 1}, "
+    f"Loss: {train_loss.result()}, "
+    f"Accuracy: {train_accuracy.result() * 100}, "
+    f"Test Loss: {test_loss.result()}, "
+    f"Test Accuracy: {test_accuracy.result() * 100}"
   )
 

@@ -1,13 +1,7 @@
-import sys
-import os
-from numpy import broadcast, float32
 import tensorflow as tf
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(base)
-sys.path.append(os.path.join(base,'../'))
-from blocks import mri_trans_gan_2d,mri_trans_gan_3d_special 
-from blocks import mri_trans_gan_3d_bak as mri_trans_gan_3d
-from _gan_helper import GeneratorHelper,DiscriminatorHelper
+from models.blocks import mri_trans_gan_2d,mri_trans_gan_3d_special 
+from models.blocks import mri_trans_gan_3d_bak as mri_trans_gan_3d
+from models.networks._gan_helper import GeneratorHelper,DiscriminatorHelper
 """
 做模型结构的探究 
 开辟额外支路
@@ -17,8 +11,8 @@ from _gan_helper import GeneratorHelper,DiscriminatorHelper
 判别器
 """
 __all__ = [ 
-    "Generator",
-    "Discriminator",
+    'Generator',
+    'Discriminator',
 ]
 ###################################################################
 class Generator(tf.keras.Model):
@@ -37,7 +31,7 @@ class Generator(tf.keras.Model):
         #--------------------------------------------------------#
         self.broad_cast_list = []
         #--------------------------------------------------------#
-        if dimensions_type=="2D":
+        if dimensions_type=='2D':
             self.block_list = []
             self.block_list.append(mri_trans_gan_2d.Conv7S1(filters=capacity_vector,dtype=dtype))
             self.block_list.append(mri_trans_gan_2d.DownSampling(filters=capacity_vector*2,dtype=dtype))
@@ -47,9 +41,9 @@ class Generator(tf.keras.Model):
             self.block_list.append(mri_trans_gan_2d.UpSampling(filters=capacity_vector,dtype=dtype,up_sampling_method=up_sampling_method))
             tmp_policy = tf.keras.mixed_precision.Policy('float32')
             self.block_list.append(mri_trans_gan_2d.Conv7S1(filters=1,activation=last_activation_name,dtype=dtype,specific_out_dtype=tmp_policy,output_domain=output_domain))
-        elif dimensions_type == "3D":
+        elif dimensions_type == '3D':
             self.block_list = []
-            self.block_list.append(mri_trans_gan_3d.Conv7S1(filters=capacity_vector,dtype=dtype,activation="relu"))
+            self.block_list.append(mri_trans_gan_3d.Conv7S1(filters=capacity_vector,dtype=dtype,activation='relu'))
             self.block_list.append(mri_trans_gan_3d.DownSampling(filters=capacity_vector*2,dtype=dtype))
             self.block_list.append(mri_trans_gan_3d.DownSampling(filters=capacity_vector*4,dtype=dtype))
             self.block_list.append(mri_trans_gan_3d.ResBlocks(filters=capacity_vector*4+capacity_vector*4//8,n=res_blocks_num,dtype=dtype))
@@ -57,9 +51,9 @@ class Generator(tf.keras.Model):
             self.block_list.append(mri_trans_gan_3d.UpSampling(filters=capacity_vector,dtype=dtype,up_sampling_method=up_sampling_method))
             tmp_policy = tf.keras.mixed_precision.Policy('float32')
             self.block_list.append(mri_trans_gan_3d.Conv7S1(filters=1,activation=last_activation_name,dtype=dtype,specific_out_dtype=tmp_policy,output_domain=output_domain))
-        elif dimensions_type == "3D_special":
+        elif dimensions_type == '3D_special':
             self.block_list = []
-            self.block_list.append(mri_trans_gan_3d_special.Conv7S1(filters=capacity_vector,dtype=dtype,activation="relu"))
+            self.block_list.append(mri_trans_gan_3d_special.Conv7S1(filters=capacity_vector,dtype=dtype,activation='relu'))
             self.block_list.append(mri_trans_gan_3d_special.DownSampling(filters=capacity_vector*2,dtype=dtype))
             self.block_list.append(mri_trans_gan_3d_special.DownSampling(filters=capacity_vector*4,dtype=dtype))
             self.block_list.append(mri_trans_gan_3d_special.ResBlocks(filters=capacity_vector*4+capacity_vector*4//8,n=res_blocks_num,dtype=dtype)) # TODO 为了迎合patch_mask添加到通道维度的操作 临时方案 并不合理
@@ -134,7 +128,7 @@ class Discriminator(tf.keras.Model):
         #--------------------------------------------------------#
         self.broad_cast_list = []
         #--------------------------------------------------------#
-        if dimensions_type=="2D":
+        if dimensions_type=='2D':
             self.block_list=[]
             self.block_list.append(mri_trans_gan_2d.Conv4S2(filters=capacity_vector,norm=False,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype))
             self.block_list.append(mri_trans_gan_2d.Conv4S2(filters=capacity_vector*2,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype))
@@ -142,7 +136,7 @@ class Discriminator(tf.keras.Model):
             self.block_list.append(mri_trans_gan_2d.Conv4S2(filters=capacity_vector*8,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype))
             tmp_policy = tf.keras.mixed_precision.Policy('float32')
             self.block_list.append(mri_trans_gan_2d.Conv4S1(use_sigmoid=use_sigmoid,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype,specific_out_dtype=tmp_policy))
-        elif dimensions_type == "3D":
+        elif dimensions_type == '3D':
             self.block_list=[]
             self.block_list.append(mri_trans_gan_3d.Conv4S2(filters=capacity_vector,norm=False,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype))
             self.block_list.append(mri_trans_gan_3d.Conv4S2(filters=capacity_vector*2,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype))
@@ -150,7 +144,7 @@ class Discriminator(tf.keras.Model):
             self.block_list.append(mri_trans_gan_3d.Conv4S2(filters=capacity_vector*8,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype))
             tmp_policy = tf.keras.mixed_precision.Policy('float32')
             self.block_list.append(mri_trans_gan_3d.Conv4S1(use_sigmoid=use_sigmoid,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype,specific_out_dtype=tmp_policy))
-        elif dimensions_type == "3D_special":
+        elif dimensions_type == '3D_special':
             self.block_list=[]
             # paper
             self.block_list.append(mri_trans_gan_3d_special.Conv4S2(filters=capacity_vector,norm=False,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype))

@@ -1,6 +1,6 @@
 import builtins
 __all__ = [ 
-    "type_check",
+    'type_check',
 ]
 def _get_inner(x,type):
     if type==list:
@@ -10,7 +10,7 @@ def _get_inner(x,type):
     elif type==dict:
         return list(x.values())[0]
     else:
-        raise ValueError("Unsupported type {}".format(type))
+        raise ValueError(f"Unsupported type {type}")
 def type_check(x,mode,meta_instance_or_type=None):#
     """
     判断x是否是基于mode列表中的list tuple dict将最小元进行嵌套的组织形式 是则返回true 否则返回false 
@@ -45,7 +45,7 @@ def type_check(x,mode,meta_instance_or_type=None):#
         else:
             return False
     else:
-        raise ValueError("Unsupported mode {}".format(mode))
+        raise ValueError(f"Unsupported mode {mode}")
 #--------------------------------------------------------------#
 def _parse_spec(str_spec):
     return [getattr(builtins, x) for x in str_spec.rstrip('>').split('<')]
@@ -61,10 +61,10 @@ def _validate(value, spec):
             pass
     return True
 #-------------------------------------------------------------#
-if __name__ =="__main__":
-    dic = {"b1":{"a1":1,"a2":2,"a3":3},"b2":{"a1":4,"a2":5,"a3":6}}
-    dic2 = [{"a1":1,"a2":2,"a3":3},{"a1":4,"a2":5,"a3":6}]
-    dic3 = {"b1":[1,2,3],"b2":[4,5,6]}
+if __name__ =='__main__':
+    dic = {'b1':{'a1':1,'a2':2,'a3':3},'b2':{'a1':4,'a2':5,'a3':6}}
+    dic2 = [{'a1':1,'a2':2,'a3':3},{'a1':4,'a2':5,'a3':6}]
+    dic3 = {'b1':[1,2,3],'b2':[4,5,6]}
     import numpy as np 
     a = np.array(0)
     print(type_check(dic,[dict]))
@@ -76,7 +76,7 @@ if __name__ =="__main__":
     print(type_check(dic,[dict],meta_instance_or_type=()))
     print(type_check(dic,[dict],meta_instance_or_type=set()))
     print(type_check(dic,[dict],meta_instance_or_type=[]))
-    dic = {"b1":{"a1":a+1,"a2":a+2,"a3":a+3},"b2":{"a1":a+4,"a2":a+5,"a3":a+6}}
+    dic = {'b1':{'a1':a+1,'a2':a+2,'a3':a+3},'b2':{'a1':a+4,'a2':a+5,'a3':a+6}}
     print(type_check(dic,[dict,dict],meta_instance_or_type=a+1))
     print(type_check(dic,[dict],meta_instance_or_type=a+1))
     print(type_check(dic,[dict],meta_instance_or_type=np.int32))

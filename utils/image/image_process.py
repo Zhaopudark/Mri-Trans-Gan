@@ -1,7 +1,7 @@
 """
-将若干通用性的2D 3D图片处理仍无放到这里。
+将若干通用性的2D 3D图片处理仍无放到这里
 提供 图片文件的读写方法实现
-但是"写"方法不在此处运行 而是被模型或logs调用
+但是'$1'方法不在此处运行 而是被模型或logs调用
 """
 import os 
 import math
@@ -17,8 +17,8 @@ base = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(base, '../'))
 from utils.types_check import type_check
 __all__ = [
-    "ImageSaver",
-    "Drawer",
+    'ImageSaver',
+    'Drawer',
 ]
 class ImageSaver():
     def __init__(self,path) -> None:
@@ -64,7 +64,7 @@ class Drawer():
             plt.imshow(img,cmap='gray') # TODO
             plt.axis('off')
         buf = io.BytesIO() # 在内存中读写 方便很多
-        plt.savefig(buf,format="png") # TODO
+        plt.savefig(buf,format='png') # TODO
         plt.close()
         buf.seek(0)
         img = Image.open(buf)
@@ -77,7 +77,7 @@ class Drawer():
         return img #B H W C形式
     def draw_from_dict(self,img_dict,process_func=lambda x:x):
         """
-        根据传入的字典 进行绘图。
+        根据传入的字典 进行绘图
         要求字典格式为2重字典
         {path1:{img_name1:img1,img_name2:img2,...,}
          path2:{img_name1:img1,img_name2:img2,...,}

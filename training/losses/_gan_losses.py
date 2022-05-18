@@ -8,12 +8,10 @@ import tensorflow as tf
 一般的 求导永远是对无维度的单值loss求导
 """
 __all__ = [
-    "GanLoss",
+    'GanLoss',
 ]
 class VanillaGanLoss(tf.keras.losses.Loss):
     """
-   
-
     >>> loss = MeanVolumeGradientError()
     >>> y_true = tf.random.normal(shape=[4,5,6])
     >>> y_pred = tf.random.normal(shape=[4,5,6])
@@ -31,29 +29,29 @@ class VanillaGanLoss(tf.keras.losses.Loss):
     
     """
     @typechecked
-    def __init__(self,mode:str="L1",name:str="mean_volume_gradient_error",data_format:str="channels_last",**kwargs) -> None:
-        if "reduction" in kwargs.keys():
-            if kwargs["reduction"] != tf.keras.losses.Reduction.NONE:
+    def __init__(self,mode:str='L1',name:str='mean_volume_gradient_error',data_format:str='channels_last',**kwargs) -> None:
+        if 'reduction' in kwargs.keys():
+            if kwargs['reduction'] != tf.keras.losses.Reduction.NONE:
                 logging.warning("""
                     MeanVolumeGradientError will reduce output by its own reduction. 
                     Setting `reduction` is ineffective.
                     Output will be reduce to [B,{N-2},C] shape whether the input_shape is 
                     [B,D1,D2,...,D{N-2},C] (channels last) or [B,C,D1,D2,...,D{N-2}] (channels first)
                     """)
-        kwargs["reduction"] = tf.keras.losses.Reduction.NONE
+        kwargs['reduction'] = tf.keras.losses.Reduction.NONE
         super().__init__(name=name,**kwargs)
         self.loss_kwargs = {}
-        self.loss_kwargs["mode"] = mode
-        self.loss_kwargs["data_format"] = data_format
-        if mode.upper() == "L1":
+        self.loss_kwargs['mode'] = mode
+        self.loss_kwargs['data_format'] = data_format
+        if mode.upper() == 'L1':
             self.loss_func = self._l1_loss
-        elif mode.upper() == "L2":
+        elif mode.upper() == 'L2':
             self.loss_func = self._l2_loss
         else:
-            raise ValueError("MeanVolumeGradientError's inner loss mode only support in 'L1' or 'L2', not{}".format(mode))
+            raise ValueError(f"MeanVolumeGradientError's inner loss mode only support in `L1` or `L2`, not `{mode}`.")
         self.data_format = data_format.lower()
-        if self.data_format not in ["channels_last","channels_first"]:
-            raise ValueError("data_format should be one in 'channels_last' or'channels_first', not {}.".format(data_format))
+        if self.data_format not in ['channels_last','channels_first']:
+            raise ValueError(f"data_format should be one in `channels_last` or `channels_first`, not `{data_format}`.")
 
     def call(self,y_true,y_pred):
         # y_true_gradient = self._get_volume_gradient(y_true)
@@ -64,7 +62,7 @@ class VanillaGanLoss(tf.keras.losses.Loss):
         # return super().__call__(y_true,y_pred,sample_weight)
     def get_config(self):
         # config = {}
-        # if hasattr(self,"loss_kwargs"):
+        # if hasattr(self,'loss_kwargs'):
         #     config = {**self.loss_kwargs}     
         # base_config = super().get_config()
         # return dict(list(base_config.items()) + list(config.items()))
@@ -77,22 +75,22 @@ class GanLoss():
     def __init__(self,loss_name,args,counters_dict={}):
         self.loss_name = loss_name
         self.__counters_dict = counters_dict
-        if loss_name.lower() == "vanilla":
+        if loss_name.lower() == 'vanilla':
             self.gan_loss = _VanillaGanLoss(loss_name,counters_dict=self.__counters_dict)
-        elif loss_name.lower() == "wgan":
+        elif loss_name.lower() == 'wgan':
             self.gan_loss = _WGanLoss(loss_name,counters_dict=self.__counters_dict)
         elif loss_name.lower() == "wgan-gp":
             penalty_l = float(args.wgp_penalty_l)
             initial_seed = int(args.wgp_initial_seed)
             random_always = bool(args.wgp_random_always)
             random_generator = tf.random.Generator.from_seed(initial_seed)
-            self.__counters_dict["wgp_random_generator"] = random_generator # 会被模型函数中的check point 记录
+            self.__counters_dict['wgp_random_generator'] = random_generator # 会被模型函数中的check point 记录
             self.gan_loss = _WGanGpLoss(loss_name,counters_dict=self.__counters_dict,penalty_l=penalty_l,initial_seed=initial_seed,random_always=random_always)
-        elif loss_name.lower() == "lsgan":
+        elif loss_name.lower() == 'lsgan':
             self.gan_loss = _LsGanLoss(loss_name,counters_dict=self.__counters_dict)
-        elif loss_name.lower() == "hinge":
+        elif loss_name.lower() == 'hinge':
             self.gan_loss = _HingeLoss(loss_name,counters_dict=self.__counters_dict)
-        elif loss_name.lower() == "rsgan":#判别器输出范围不明 暂时不讨论
+        elif loss_name.lower() == 'rsgan':#判别器输出范围不明 暂时不讨论
             self.gan_loss = _RsGanLoss(loss_name,counters_dict=self.__counters_dict)
         else:
             raise ValueError("Do not support the loss: "+loss_name)
@@ -166,9 +164,9 @@ class _WGanGpLoss():
         self.__counters_dict = counters_dict
         self.penalty_l = penalty_l
         self.noise_shape = None
-        self.step = self.__counters_dict["step"]
-        self.epoch = self.__counters_dict["epoch"]
-        self.random_generator = self.__counters_dict["wgp_random_generator"]
+        self.step = self.__counters_dict['step']
+        self.epoch = self.__counters_dict['epoch']
+        self.random_generator = self.__counters_dict['wgp_random_generator']
         self.initial_seed = initial_seed
         self.random_always = random_always
     def discriminator_loss(self,D_real,D_fake,real_samples=None,fake_samples=None,D=None,condition=None):
@@ -210,7 +208,7 @@ class _WGanGpLoss():
         # tf.print(penalty_norm)
         return penalty_norm
 
-if __name__=="__main__":
+if __name__=='__main__':
     import random
     import os
     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
@@ -254,16 +252,16 @@ if __name__=="__main__":
     print(g.uniform(shape=(1,),minval=0,maxval=2**31-1,dtype=tf.int32))
     # state = g.state
     def change_dic(dic):
-        dic["999"] = 10000
+        dic['999'] = 10000
     dic = {}
-    dic["11"] = 11
+    dic['11'] = 11
     change_dic(dic.copy())
     print(dic)
 
     def change_dic(__dic):
-        __dic["999"] = 10000
+        __dic['999'] = 10000
     dic = {}
-    dic["11"] = 11
+    dic['11'] = 11
     change_dic(dic)
     print(dic)
 
@@ -271,7 +269,7 @@ if __name__=="__main__":
     for i in range(3):
         rg = tf.random.Generator.from_seed(0)
         checkpoint_directory = "./tmp/training_checkpoints"
-        checkpoint_prefix = os.path.join(checkpoint_directory, "ckpt")
+        checkpoint_prefix = os.path.join(checkpoint_directory, 'ckpt')
         checkpoint = tf.train.Checkpoint(optimizer=rg)
         # checkpoint.write(file_prefix=checkpoint_prefix)
         checkpoint.restore(tf.train.latest_checkpoint(checkpoint_directory))
@@ -295,6 +293,6 @@ if __name__=="__main__":
     for item1,item2 in zip(buf1,buf2):
         _sum += tf.reduce_sum(item1-item2)
     print(_sum)
-    print("测试前需要清理干净作为本次实验缓存的checkpoint目录")
+    print('$1')
     print("测试schedule是否可以落实 如果sum=0 表示带有schedule的optimizers可以顺利保存内部的step(即iteration)并在下次求导时正确应用schedule",_sum)
 

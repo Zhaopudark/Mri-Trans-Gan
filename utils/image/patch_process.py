@@ -5,14 +5,63 @@ import math
 import tensorflow as tf
 import random
 import tensorflow.experimental.numpy as tnp
+import functools
+import itertools
 import numpy as np
-
+from typeguard import typechecked 
 base = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(base, '../'))
-from utils.types_check import type_check
 __all__ = [
-    "PacthesProcesser",
+    'PacthesProcesser',
 ]
+@typechecked
+def index_cal(valid_range:tuple[int,int],sub_seq_len:int,sub_seq_num:int):
+    """计算
+    如果给定一个数组某个维度的范围视为有效范围
+    在这个有效范围内,分割出指定个数的子范围,确保这些子范围的并集与有效范围全等
+    策略:
+    先选取中间范围 且使得有效范围的中心位置元素(或者偶数个元素时,中心右侧元素)为中间范围的中心元素(或者偶数个元素时,中心右侧元素) [0,1,2,3] 2为中心  [0,1,2,3,4] 时 2为中心
+    然后遵循先左后右的原则从中心扩散出若干区间
+    如此 便可以保证 返回的序列的中心序列包含中心点,
+    遇到边界时,考虑重叠范围,故不需要每个范围都考虑重叠,而是在边界处考虑(最多考虑两次边界,未证明是否只要考虑左边界一次) 
+
+    valid_range:有效范围的左右下标
+    sub_seq_len:子范围长度
+    sub_seq_num:子范围个数
+    返回list[list] [[a,b],[...]]  a,b 表示第一个区间的左下标和右下标  已经自动排序 所以中心序列的中心值就是原本的中心点                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
+    """
+    start_index,end_index = valid_range
+    valid_len = end_index-start_index+1
+    if sub_seq_num==1:#中心剪裁
+        if valid_len < sub_seq_len:
+            bigger_len = sub_seq_len-valid_len
+            end_index += bigger_len//2
+            start_index -= bigger_len-(bigger_len//2)
+    else:#非中心剪裁 要求可以覆盖所有有效区域
+        if sub_seq_num*sub_seq_len < valid_len:
+            old_sub_seq_num = sub_seq_num
+            sub_seq_num = math.ceil(valid_len/sub_seq_len)
+            logging.warning(f"sub_seq_num has been changed from {old_sub_seq_num} to {sub_seq_num}.")
+    index_range_buf = []
+    mid_index = math.ceil((start_index+end_index)/2)
+    left_index = mid_index-sub_seq_len//2 # 中心区间的左下标
+    right_index = left_index+sub_seq_len-1 # 中心区间的右下标
+    for i in range(sub_seq_num):
+        if i%2==0:
+            index_range_buf.append([left_index,right_index])
+            left_index = index_range_buf[0][0]
+            left_index -= sub_seq_len
+            if left_index < start_index:
+                left_index = start_index
+            right_index = left_index+sub_seq_len-1
+        else:
+            index_range_buf.insert(0,[left_index,right_index])
+            right_index = index_range_buf[-1][-1]
+            right_index += sub_seq_len
+            if right_index > end_index:
+                right_index = end_index
+            left_index = right_index-sub_seq_len+1
+    return tuple(tuple(item) for item in index_range_buf)
 class PacthesProcesser():
     def __init__(self) -> None:
         pass
@@ -52,7 +101,7 @@ class PacthesProcesser():
                 if sub_seq_num*sub_seq_len < valid_len:
                     old_sub_seq_num = sub_seq_num
                     sub_seq_num = math.ceil(valid_len/sub_seq_len)
-                    logging.warning("sub_seq_num has been changed from {} to {}.".format(old_sub_seq_num,sub_seq_num))
+                    logging.warning(f"sub_seq_num has been changed from {old_sub_seq_num} to {sub_seq_num}.")
                 else:
                     pass
         index_range_buf = []
@@ -76,35 +125,25 @@ class PacthesProcesser():
                 left_index = right_index-sub_seq_len+1
         return index_range_buf
     class GetPatches():
-        def __init__(self,cut_ranges=None,patch_size=None,patch_nums=None,random_seed=None) -> None:
-            if type_check(cut_ranges,mode=[list,list],meta_instance_or_type=int):
-                self._cut_ranges = cut_ranges
-            else:
-                raise ValueError("")
-            if type_check(patch_size,mode=[list],meta_instance_or_type=int):
-                self._patch_size = patch_size
-            else:
-                raise ValueError("")
-            if type_check(patch_nums,mode=[list],meta_instance_or_type=int):
-                self._patch_nums = patch_nums
-            else:
-                raise ValueError("")
+        @typechecked
+        def __init__(self,cut_ranges:list[list[int]]=None,patch_size:list[int]=None,patch_nums:list[int]=None,random_seed:int=None) -> None:
+            self._cut_ranges = cut_ranges
+            self._patch_size = patch_size
+            self._patch_nums = patch_nums
             self._random_seed = random_seed
             self._input_shape_checked = False
         @property
         def output_shape(self):
-            shape = []
             cut_shape = [b-a+1 for (a,b) in self._cut_ranges]
-            shape.append(tuple(self._patch_size))
-            shape.append(tuple(cut_shape))
-            shape.append(tuple([len(self._cut_ranges),len(self._cut_ranges[0])]))
+            shape = [
+                tuple(self._patch_size),
+                tuple(cut_shape),
+                (len(self._cut_ranges), len(self._cut_ranges[0])),
+            ]
             return tuple(shape)
         @property
         def output_dtype(self):
-            dtype = []
-            dtype.append(tf.float32)
-            dtype.append(tf.float32) #mask 将参与div_no_nan计算因此不能是int32 一般化取float32
-            dtype.append(tf.int32)
+            dtype = [tf.float32, tf.float32, tf.int32]
             return tuple(dtype)
             
         def _input_shape_check(self,img,cut_ranges,patch_size,patch_nums,):
@@ -113,48 +152,6 @@ class PacthesProcesser():
                 raise ValueError("Dims of img and patch sizes|nums|ranges must be the same!")
             else:
                 self._input_shape_checked = True
-        def _div_lists(self,l):
-            """
-            NOTE 设计一个深度优先搜索算法的应用(卧槽 写出来变成了广度优先搜索)
-            针对仅有两个子列表的列表[[a,b],[c,d,e]],将列表拆为[[a,c],[a,d],[a,e],[b,c],[b,d],[b,e]] 其中a,b,c,d,e为抽象的最小单元,可以是列表
-            如果列表多余两个子列表[[a,b],[c,d],[e,f]],则先将前两个列表合并[[[a,c],[a,d],[b,c],[b,d]],[e,f]] 前一个列表为最小元的列表，可以使用+合并后一个列表组成新的最小元列表
-            """
-            def _ismeta(l):# 在本方法中用于判断l是否是拆分列表的最小元 即[int1,int2]为一个最小元
-                if isinstance(l,list):
-                    if  not isinstance(l[0],list):
-                        return True
-                    else:
-                        return False
-                else:
-                    raise ValueError("The initial list was over disassembled!")
-            out_buf = []
-            if isinstance(l,list):
-                if (len(l)==1):
-                    for a in l[0]:
-                        if _ismeta(a):
-                            a = [a]
-                            out_buf.append(a)
-                elif (len(l)==2):
-                    for a in l[0]:
-                        for b in l[1]:
-                            if _ismeta(a):
-                                a = [a]
-                            if _ismeta(b):
-                                b = [b]
-                            out_buf.append(a+b)
-                elif (len(l)>2):
-                    for a in self._div_lists(l[0:-1]):
-                        for b in l[-1]:
-                            if _ismeta(a):
-                                a = [a]
-                            if _ismeta(b):
-                                b = [b]
-                            out_buf.append(a+b)
-                else:
-                    raise ValueError()
-            else:
-                raise ValueError()
-            return out_buf
         def _index_list_to_slice_range(self,index_range_list):
             """
             为了通过tf.slice 获得 index_range 描述的区域
@@ -174,7 +171,7 @@ class PacthesProcesser():
             padding_vector = []
             for i,(cut_range,index_range) in enumerate(zip(cut_range_list,index_range_list)):
                 padding_vector.append([index_range[0]-cut_range[0],cut_range[1]-index_range[1]]) # index_range=[a,b] cut_range = [A,B] 一般地 有A<=a<b<=B 所以左边pad a-A个0 右边pad B-b个0
-            return tf.constant(padding_vector,dtype=tf.int32) # 变为tf.pad可接受的int32形式
+            return tf.convert_to_tensor(padding_vector,dtype=tf.int32) # 变为tf.pad可接受的int32形式
         def get_center_patches(self,img):
             if not self._input_shape_checked:
                 self._input_shape_check(img,self._cut_ranges,self._patch_size,self._patch_nums)
@@ -183,15 +180,16 @@ class PacthesProcesser():
             patch_index_buf = []
             for i in range(len(img.shape)):
                 patch_index_buf.append(PacthesProcesser._index_cal(PacthesProcesser,valid_range=self._cut_ranges[i],sub_seq_len=self._patch_size[i],sub_seq_num=self._patch_nums[i]))
-            patch_index_lists = self._div_lists(patch_index_buf)
+            patch_index_lists = list(itertools.product(*patch_index_buf))
+            # self._div_lists(patch_index_buf)
             if self._random_seed is not None:
                 random.seed(int(self._random_seed))
                 random.shuffle(patch_index_lists)
             else:
                 pass
             for patch_index_list in patch_index_lists:
-                begin,size = self._index_list_to_slice_range(patch_index_list)
-                patch_in_list = tf.slice(img,begin=begin,size=size)
+                patch_in_list = img[tuple(map(lambda x:slice(x[0],x[1]+1),patch_index_list))]
+                # patch_in_list = tf.slice(img,begin=begin,size=size)
                 padding_vector = self._index_list_to_padding_vector_by_cut_ranges(self._cut_ranges,patch_index_list)
                 mask_in_list = tf.pad(tf.ones(shape=patch_in_list.shape),paddings=padding_vector) 
                 padding_vector_in_list = padding_vector
@@ -353,8 +351,7 @@ def _my_slice(img,patch_index_lists):
         img_list.append(current_img)
     return img_list
 
-
-if __name__=="__main__":
+if __name__=='__main__':
     p = PacthesProcesser()
     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
@@ -408,8 +405,11 @@ if __name__=="__main__":
     #             yield [(item1,item2,item3),(item1,item2,item3),(item1,item2,item3),(item1,item2,item3)]
 
     # for i,*out in enumerate(gen_patches(2)):
-    #     print("out",i)
+    #     print('out',i)
     # for i,*out in enumerate(iter_wrapper(gen_patches(10))):
-    #     print("out",i)
+    #     print('out',i)
+    a = [[1],[2]]
+    b = [[3],[4]]
+    print(list(itertools.product(a,b)))
 
     

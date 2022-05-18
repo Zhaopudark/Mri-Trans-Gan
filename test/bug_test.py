@@ -24,10 +24,10 @@ class tmp_args():
         pass
 args = tmp_args()
 args.capacity_vector = 32
-args.up_sampling_method = "up_conv"
+args.up_sampling_method = 'up_conv'
 args.res_blocks_num = 9
 args.self_attention_G = None
-args.dimensions_type = "3D"
+args.dimensions_type = '3D'
 args.self_attention_D = None
 args.spectral_normalization = False
 args.sn_iter_k = 1
@@ -42,7 +42,8 @@ tf.keras.utils.set_random_seed(1000)
 g1.build(input_shape=[1,16,128,128,1])  
 tf.keras.utils.set_random_seed(1000) 
 d1.build(input_shape=[1,16,128,128,1]) 
-
+tf.keras.utils.set_random_seed(1000)
+tf.config.experimental.enable_op_determinism()
 g2 = Generator2(args,dtype=policy) 
 d2 = Discriminator2(args,dtype=policy) 
 tf.keras.utils.set_random_seed(1000)
@@ -50,7 +51,8 @@ g2.build(input_shape=[1,16,128,128,1])
 tf.keras.utils.set_random_seed(1000) 
 d2.build(input_shape=[1,16,128,128,1]) 
 
-
+tf.keras.utils.set_random_seed(1000)
+tf.config.experimental.enable_op_determinism()
 g3 = Generator3(args,dtype=policy) 
 d3 = Discriminator3(args,dtype=policy) 
 tf.keras.utils.set_random_seed(1000)

@@ -76,16 +76,16 @@ def get_del_list(path):
     del_buf = []
     for (dirName, subdirList, fileList) in os.walk(path):
         for filename in fileList:
-            if "mask" in filename.lower(): 
+            if 'mask' in filename.lower(): 
                 del_buf.append(os.path.join(dirName,filename))
-            if "norm" in filename.lower(): 
+            if 'norm' in filename.lower(): 
                 del_buf.append(os.path.join(dirName,filename))
     return del_buf
 def get_mask_list(path):
     del_buf = []
     for (dirName, subdirList, fileList) in os.walk(path):
         for filename in fileList:
-            if "mask" in filename.lower(): 
+            if 'mask' in filename.lower(): 
                 del_buf.append(os.path.join(dirName,filename))
     return del_buf
 
@@ -139,12 +139,12 @@ def resample(img,current_spacing,direct_spacing=[1,1,1]):
     
 #     T1_path = "G:\\Datasets\\IXI\\IXI-T12T2\\"+file_name[0:-9]+"T1.nii.gz"
 #     if os.path.exists(T1_path):
-#         print("yes")
+#         print('yes')
 #     else:
 #         raise ValueError("Not exist.")
 #     T2_path = "G:\\Datasets\\IXI\\IXI-T2\\"+file_name[0:-9]+"T2.nii.gz"
 #     if os.path.exists(T2_path):
-#         print("yes")
+#         print('yes')
 #     else:
 #         raise ValueError("Not exist.")
 #     T1_save_path = "G:\\Datasets\\IXI\\Registration\\IXI-T1\\"+file_name[0:-9]+"resampled_T1.nii.gz"
@@ -200,11 +200,11 @@ def resample(img,current_spacing,direct_spacing=[1,1,1]):
 #     T1_mask_path = "G:\\Datasets\\IXI\\Registration\\IXI-T1-Mask\\"+file_name[0:-20]+"T1_brain_mask.nii.gz"
 #     T2_mask_path = "G:\\Datasets\\IXI\\Registration\\IXI-T2-Mask\\"+file_name[0:-20]+"T2_brain_mask.nii.gz"
 #     if os.path.exists(T1_mask_path):
-#         print("yes")
+#         print('yes')
 #     else:
 #         raise ValueError("Not exist.")
 #     if os.path.exists(T2_mask_path):
-#         print("yes")
+#         print('yes')
 #     else:
 #         raise ValueError("Not exist.")
 #     mask_save_path = "G:\\Datasets\\IXI\\Registration\\Mask\\"+file_name[0:-20]+"brain_mask.nii.gz"
@@ -249,7 +249,7 @@ def resample(img,current_spacing,direct_spacing=[1,1,1]):
 #     print(file_name)
 #     mask_path = "G:\\Datasets\\IXI\\Registration\\Mask\\"+file_name[0:-9]+"brain_mask.nii.gz"
 #     if os.path.exists(mask_path):
-#         print("yes")
+#         print('yes')
 #     else:
 #         raise ValueError("Not exist.")
 

@@ -4,13 +4,12 @@ import tensorflow as tf
 计算SSIM (x,y)
 """
 __all__ = [
-    "Ssim3D",
+    'Ssim3D',
 ]
 class Ssim3D():
-    def __init__(self,data_format="BDHWC"):
-        self.name = "ssim3D"
+    def __init__(self):
+        self.name = 'ssim3D'
         self.mean = tf.keras.metrics.Mean(dtype=tf.float32)
-        self.data_format = data_format
     def __call__(self,x,y):
         self.mean.reset_states()
         if x.numpy().min()<0:
@@ -26,12 +25,7 @@ class Ssim3D():
         if x.shape[0]!=1:
             raise ValueError("Calculation error! Only suppotr [1,x,x,x] or [1,x,x,x,x] shape")#本方法支持
         if len(x.shape)==5:
-            if self.data_format == "BDHWC":
-                self.mean(_ssim3d(x,y))
-            elif self.data_format == "BHWDC":
-                self.mean(_ssim3d(x,y))
-            else:
-                raise ValueError("Unsupported data format:{}".format(self.__data_format))    
+            self.mean(_ssim3d(x,y)) 
         if len(x.shape)==4:
             self.mean(_ssim2d(x,y))
         result = self.mean.result()
@@ -96,7 +90,7 @@ def _ssim2d(x,y,max_val=1.0,filter_size=11,filter_sigma=1.5,k1=0.01,k2=0.03,comp
     w = _fspecial_gauss_2d(size=filter_size,sigma=filter_sigma) # 获得高斯核
     w = tf.tile(w,multiples=[1,1,x.shape[-1],1])# 在输入通道上扩展 高斯核的最后一维是输出倍数,专门用于深度卷积 默认就为1不变
     def _reducer(x):
-        return tf.nn.depthwise_conv2d(x,filter=w,strides=[1,1,1,1],padding="VALID")
+        return tf.nn.depthwise_conv2d(x,filter=w,strides=[1,1,1,1],padding='VALID')
     c1 = (k1*max_val)**2
     c2 = (k2*max_val)**2
     mean0 = _reducer(x)
@@ -138,10 +132,10 @@ def _ssim3d(x,y,max_val=1.0,filter_size=11,filter_sigma=1.5,k1=0.01,k2=0.03,comp
     w = tf.tile(w,multiples=[1,1,1,x.shape[-1],1])# 在输入通道上扩展 高斯核的最后一维是输出倍数,专门用于深度卷积 默认就为1不变
     # 但是 3D的深度卷积并不支持  目前不涉及3D多通道 因此只有一个深度 我们稍加限制以安全稳定地实现暂时是实验目的
     # def _reducer(x):
-    #     return tf.nn.depthwise_conv3d(x,filter=w,strides=[1,1,1,1,1],padding="VALID")
+    #     return tf.nn.depthwise_conv3d(x,filter=w,strides=[1,1,1,1,1],padding='VALID')
     assert w.shape[-2]==1
     def _reducer(x):
-        return tf.nn.conv3d(x,filters=w,strides=[1,1,1,1,1],padding="VALID") #输入通道恒为1时,卷积结果等价于深度卷积的结果
+        return tf.nn.conv3d(x,filters=w,strides=[1,1,1,1,1],padding='VALID') #输入通道恒为1时,卷积结果等价于深度卷积的结果
     c1 = (k1*max_val)**2
     c2 = (k2*max_val)**2
     mean0 = _reducer(x)
@@ -185,7 +179,7 @@ def _fspecial_gauss_3d(size, sigma):
     # print(g.shape)
     return tf.reshape(g, shape=[size,size,size,1,1]) # 拉成三维高斯核形式,并赋予卷积需要的输入输出维度 默认为1
 #--------------------------------------------------------------------------------------------------------------------------------------#
-if __name__ =="__main__":
+if __name__ =='__main__':
     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
@@ -193,7 +187,7 @@ if __name__ =="__main__":
     x2 = tf.random.uniform(shape=[1,128,128,128],minval=0,maxval=1)
     # w  = tf.random.normal(shape=[3,3,3,1])
     # _ssim(x1,x2)
-    # print(tf.nn.depthwise_conv2d(x1,filter=w,strides=[1,1,1,1],padding="SAME"))
+    # print(tf.nn.depthwise_conv2d(x1,filter=w,strides=[1,1,1,1],padding='SAME'))
 
     ssim = Ssim3D()
     print(m1:=ssim(x1,x2))

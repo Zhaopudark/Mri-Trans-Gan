@@ -349,7 +349,7 @@ import logging
 import tensorflow as tf 
 from functools import wraps
 from typeguard import typechecked
-from typing import Tuple,Iterable,Union,List
+from typing import Iterable
 # def typeguard_for_conv_helper(func):
 #     def _arg_trans(input_arg):
 #         """
@@ -359,9 +359,9 @@ from typing import Tuple,Iterable,Union,List
 #         """
 #         if isinstance(input_arg,list) or isinstance(input_arg,tuple) or isinstance(input_arg,tf.TensorShape):
 #             if len(input_arg)>1 or len(input_arg)<=0:
-#                 raise ValueError("input arg must be 1-dim, not {}.".format(input_arg))
+#                 raise ValueError(f"input arg must be 1-dim, not {input_arg}.")
 #             else:
-#                 if hasattr(input_arg,"as_list"):
+#                 if hasattr(input_arg,'as_list'):
 #                     out_put = input_arg.as_list()[0]
 #                 else:
 #                     out_put =  input_arg[0]
@@ -393,14 +393,14 @@ def get_conv_paddings(input_length:int,filter_size:int,stride:int,dilation_rate:
    
     see the:
     https://www.tensorflow.org/api_docs/python/tf/nn#notes_on_padding_2
-    If padding == "SAME": output_shape = ceil(input_length/stride)
-    If padding == "VALID": output_shape = ceil((input_length-(filter_size-1)*dilation_rate)/stride)
+    If padding == 'SAME': output_shape = ceil(input_length/stride)
+    If padding == 'VALID': output_shape = ceil((input_length-(filter_size-1)*dilation_rate)/stride)
 
     NOTE In conv op, FULL padding, CUSUAL padding and VALID padding have explicit padding prodedure. 
     We can easliy give out the equivalent conv paddings without know the input_length.
-    However, it "SAME" is very special and ambiguous, beacuse its padding prodedure is influenced by 
+    However, it 'SAME' is very special and ambiguous, beacuse its padding prodedure is influenced by 
     input_length and stride to ensure "output_shape===ceil(input_length/stride)". So we should give out a equivalent
-    padding prodedure to find the equivalent conv paddings from "SAME" to "VALID" finally.
+    padding prodedure to find the equivalent conv paddings from 'SAME' to 'VALID' finally.
     Consider the equation, where pad_length is should known first:
         ceil(input_length/stride) == ceil((input_length+pad_length-(filter_size-1)*dilation_rate)/stride)
         ceil function makes the pad_length not unique.
@@ -413,13 +413,13 @@ def get_conv_paddings(input_length:int,filter_size:int,stride:int,dilation_rate:
     """
     dilated_filter_size = filter_size + (filter_size - 1) * (dilation_rate - 1)
     padding = padding.lower()
-    if padding in "valid":
+    if padding in 'valid':
         pad_left =  0
         pad_right = 0
-    elif padding == "causal": 
+    elif padding == 'causal': 
         pad_left =  dilated_filter_size - 1
         pad_right = 0
-    elif padding == "same": 
+    elif padding == 'same': 
         flag = input_length%stride
         if flag==0:
             pad_all= max(dilated_filter_size-stride,0)
@@ -427,7 +427,7 @@ def get_conv_paddings(input_length:int,filter_size:int,stride:int,dilation_rate:
             pad_all= max(dilated_filter_size-flag,0)
         pad_left =  pad_all // 2
         pad_right = pad_all - pad_left
-    elif padding == "full": # full padding has been deprecated in many conv or deconv layers
+    elif padding == 'full': # full padding has been deprecated in many conv or deconv layers
         pad_left =  dilated_filter_size - 1
         pad_right = dilated_filter_size - 1
     else:
@@ -449,7 +449,11 @@ def conv_output_length(input_length:int,filter_size:int,padding:str,stride:int,d
     Args:
         input_length: integer.
         filter_size: integer.
+<<<<<<< HEAD
         padding: one of "same", "valid", "full", "causal"
+=======
+        padding: one of 'same', 'valid', 'full', 'causal'
+>>>>>>> master
         stride: integer.
         dilation: dilation rate, integer.
     Returns:
@@ -607,7 +611,7 @@ def conv_output_length(input_length:int,filter_size:int,padding:str,stride:int,d
         output_length = input_length + dilated_filter_size - 1
     return (output_length + stride - 1) // stride
 
-@typechecked   
+@typechecked  
 def conv_input_length(output_length:int,filter_size:int,padding:str,stride:int):
     """Determines input length of a convolution given output length.
     由问题3可知
@@ -640,7 +644,7 @@ def conv_input_length(output_length:int,filter_size:int,padding:str,stride:int):
     padding == same时
         pad_left = filter_size//2
         pad_right = filter_size-filter_size//2-1
-    设 p 为 "使返回的input_length为input_length_range的最小"
+    设 p 为 '$1'
     依据 
     output_length = (input_length+left_pad+right_pad-filter_size+1+stride-1)//stride
     对计算过程进行逆向 求出 最小的input_length
@@ -652,7 +656,7 @@ def conv_input_length(output_length:int,filter_size:int,padding:str,stride:int):
     Args:
         output_length: integer.
         filter_size: integer. means dilated_filter_size
-        padding: one of "same", "valid", "full".
+        padding: one of 'same', 'valid', 'full'.
         stride: integer.
     Returns:
         The input length (integer).
@@ -669,14 +673,14 @@ def conv_input_length(output_length:int,filter_size:int,padding:str,stride:int):
         pad_left = filter_size - 1
         pad_right = 0
     else:
-        raise ValueError("padding must be one of 'same','valid','full','causal', not {}.".format(padding))
+        raise ValueError(f"padding must be one of `same`, `valid`, `full`, `causal`, not `{padding}`.")
     return (output_length - 1) * stride - pad_left - pad_right + filter_size
 
-@typechecked 
+@typechecked
 def deconv_output_length(input_length:int,
                          filter_size:int,
                          padding:str,
-                         output_padding:Union[int,None],
+                         output_padding:int|None,
                          stride:int,
                          dilation:int=1):
     """Determines output length of a transposed convolution given input length.
@@ -699,7 +703,7 @@ def deconv_output_length(input_length:int,
     本函数mimic了和tf.keras源码一致的output_length计算过程
         用户有output_padding需求时
             先规定artificial_padding_behavior为 conv_output_length() 中的 basic artificial_padding_behavior
-            规定 p 为 "使返回的input_length为input_length_range的最小"
+            规定 p 为 '$1'
             input_length(artificial_padding_conv,p)可以给出最小的input_length 同conv_input_length()函数 不再赘述
             即 
             _conv_input_length = conv_input_length(...)
@@ -781,14 +785,14 @@ def deconv_output_length(input_length:int,
         elif padding == 'same':
             _conv_input_length = _conv_output_length * stride
         else:
-            raise ValueError("padding must be one of 'same','valid','full','causal', not {}.".format(padding))
+            raise ValueError(f"padding must be one of `same`, `valid`, `full`, `causal`, not `{padding}`.")
     else:
         _conv_input_length = conv_input_length(output_length=_conv_output_length,filter_size=dilated_filter_size,padding=padding,stride=stride)
         _conv_input_length += output_padding
     return _conv_input_length
 
 @typechecked
-def get_padded_length_from_paddings(length:Union[int,None],paddings:Tuple[int,int]):
+def get_padded_length_from_paddings(length:int|None,paddings:tuple[int,int]):
     if length is not None:
         pad_left,pad_right = paddings
         length = length + pad_left + pad_right
@@ -797,41 +801,37 @@ def get_padded_length_from_paddings(length:Union[int,None],paddings:Tuple[int,in
 def normalize_paddings_by_data_format(data_format:str,paddings:Iterable):
     out_buf = []
     for data_format_per_dim in data_format:
-        if data_format_per_dim.upper() in ["N","C"]:
+        if data_format_per_dim.upper() in ['N','C']:
             out_buf.append(tuple([0,0]))
-        elif data_format_per_dim.upper() in ["D","H","W"]:
+        elif data_format_per_dim.upper() in ['D','H','W']:
             out_buf.append(tuple(next(paddings)))
         else:
-            raise ValueError("data_format should consist with 'N', 'C', 'D', 'H' or 'W' but not '{}'.".format(out_buf))
+            raise ValueError(f"data_format should consist with `N`, `C`, `D`, `H` or `W` but not `{out_buf}`.")
     return out_buf
 @typechecked
-def grab_length_by_data_format(data_format:str,length:Union[Tuple,List]):
+def grab_length_by_data_format(data_format:str,length:tuple|list):
     out_buf = []
     for data_format_per_dim,length_per_dim in zip(data_format,length):
-        if data_format_per_dim.upper() in ["N","C"]:
+        if data_format_per_dim.upper() in ['N','C']:
             pass
-        elif data_format_per_dim.upper() in ["D","H","W"]:
+        elif data_format_per_dim.upper() in ['D','H','W']:
             out_buf.append(int(length_per_dim))
         else:
-            raise ValueError("data_format should consist with 'N', 'C', 'D', 'H' or 'W' but not '{}'.".format(out_buf))
+            raise ValueError(f"data_format should consist with `N`, `C`, `D`, `H` or `W` but not `{out_buf}`.")
     return out_buf
 def normalize_padding(value):
     if isinstance(value, (list, tuple)):
         return value
     padding = value.lower()
     if padding not in {'valid', 'same', 'causal','full'}:
-        raise ValueError('The `padding` argument must be a list/tuple or one of '
-                        '"valid", "same", "full" (or "causal", only for `Conv1D). '
-                        f'Received: {padding}')
+        raise ValueError(f"The `padding` argument must be a list/tuple or one of `valid`, `same`, `full` (or `causal`, only for `Conv1D`). Received: {padding}")
     return padding
 def normalize_specific_padding_mode(value):
     if isinstance(value, (list, tuple)):
         return value
     padding = value.lower()
     if padding not in {'constant', 'reflect', 'symmetric'}:
-        raise ValueError('The `padding` argument must be a list/tuple or one of '
-                        '"constant", "reflect" or "symmetric"). '
-                        f'Received: {padding}')
+        raise ValueError(f"The `padding` argument must be a list/tuple or one of `constant`, `reflect` or `symmetric`. Received: {padding}")
     return padding.upper()
 def normalize_tuple(value, n, name, allow_zero=False):
     """Transforms non-negative/positive integer/integers into an integer tuple.
@@ -839,8 +839,8 @@ def normalize_tuple(value, n, name, allow_zero=False):
         value: The value to validate and convert. Could an int, or any iterable of
         ints.
         n: The size of the tuple to be returned.
-        name: The name of the argument being validated, e.g. "strides" or
-        "kernel_size". This is only used to format error messages.
+        name: The name of the argument being validated, e.g. 'strides' or
+        'kernel_size'. This is only used to format error messages.
         allow_zero: Default to False. A ValueError will raised if zero is received
         and this param is False.
     Returns:
@@ -850,8 +850,8 @@ def normalize_tuple(value, n, name, allow_zero=False):
         negative value is
         passed.
     """
-    error_msg = (f'The `{name}` argument must be a tuple of {n} '
-                f'integers. Received: {value}')
+    error_msg = (f"The `{name}` argument must be a tuple of {n} "
+                f"integers. Received: {value}")
 
     if isinstance(value, int):
         value_tuple = (value,) * n
@@ -866,8 +866,8 @@ def normalize_tuple(value, n, name, allow_zero=False):
             try:
                 int(single_value)
             except (ValueError, TypeError):
-                error_msg += (f'including element {single_value} of '
-                            f'type {type(single_value)}')
+                error_msg += (f"including element {single_value} of "
+                            f"type {type(single_value)}")
                 raise ValueError(error_msg)
     if allow_zero:
         unqualified_values = {v for v in value_tuple if v < 0}
@@ -876,8 +876,8 @@ def normalize_tuple(value, n, name, allow_zero=False):
         unqualified_values = {v for v in value_tuple if v <= 0}
         req_msg = '> 0'
     if unqualified_values:
-        error_msg += (f' including {unqualified_values}'
-                    f' that does not satisfy the requirement `{req_msg}`.')
+        error_msg += (f" including {unqualified_values}"
+                    f" that does not satisfy the requirement `{req_msg}`.")
         raise ValueError(error_msg)
 
     return value_tuple

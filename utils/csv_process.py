@@ -5,7 +5,7 @@ base = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(base))
 from types_check import type_check
 __all__ = [
-    "CsvWriter",
+    'CsvWriter',
 ]
 def _csv_lists_writer(file_name,head_list,row_lists):
     for index in range(len(file_name)-1,-1,-1):
@@ -45,7 +45,7 @@ def _csv_dicts_writer(file_name,head_list,row_dicts):
             file_csv.writeheader()
             file_csv.writerows(row_dicts)
 class CsvWriter():
-    def __init__(self,file_name,manner="dict"):
+    def __init__(self,file_name,manner='dict'):
         if not isinstance(file_name,str):
             raise ValueError("file_name must be a string.")
         if ".csv" in file_name:
@@ -59,7 +59,7 @@ class CsvWriter():
         self.file_name = file_name
         self.manner = manner
     def writing(self,headers=None,rows=None):
-        if self.manner == "list":
+        if self.manner == 'list':
             if type_check(headers,[list]):
                 pass 
             else:
@@ -71,7 +71,7 @@ class CsvWriter():
             else:
                 raise ValueError("Rows must be a list with depth = 2 or 1.")
             _csv_lists_writer(file_name=self.file_name,head_list=headers,row_lists=rows)
-        elif self.manner == "dict":
+        elif self.manner == 'dict':
             if type_check(rows,[list,dict]):
                 pass 
             elif type_check(rows,[dict]):
@@ -87,8 +87,8 @@ class CsvWriter():
                     raise ValueError("Header must be a list with depth=1.")
             _csv_dicts_writer(file_name=self.file_name,head_list=headers,row_dicts=rows)
         else:
-            raise ValueError("Unsupported CSV writer manner: {}".format(self.manner))
-if __name__ == "__main__":
+            raise ValueError(f"Unsupported CSV writer manner: {self.manner}")
+if __name__ == '__main__':
     headers = ['class','name','sex','height','year']
     rows = [[1,'xiaoming','male',168,23],
             [1,'xiaohong','female',162,22],

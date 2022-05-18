@@ -18,8 +18,8 @@ sys.path.append(os.path.join(base,'../../'))
 from models.blocks.vgg import PerceptualLossExtractor
 from training.losses._image_losses import MeanVolumeGradientError
 __all__ = [
-    "CycleConsistencyLoss",
-    "DualGanReconstructionLoss",
+    'CycleConsistencyLoss',
+    'DualGanReconstructionLoss',
 ]
 class CycleConsistencyLoss():
     def __init__(self,args):
@@ -50,9 +50,11 @@ class DualGanReconstructionLoss():
         self.per_flag = bool(args.Per)
         self.per_2d_flag = bool(args.Per_2D)
         self.sty_flag = bool(args.Sty)
+        self.offset = min(args.domain)
+        self.scale = max(args.domain)-min(args.domain)
         self.transfer_learning_model = PerceptualLossExtractor(
                 model_name=args.transfer_learning_model.lower(),
-                data_format="channels_last",
+                data_format='channels_last',
                 transform_high_dimension=True,
                 use_pooling=False,
                 use_feature_reco_loss=bool(self.per_flag or self.per_2d_flag),
@@ -138,13 +140,22 @@ class DualGanReconstructionLoss():
     def per_d(self,x,x_,y,y_):
         buf_0,buf_1 = dual_feature_difference_list(x=x,x_=x_,y=y,y_=y_,index_begin=0,index_end=3,ords=1)#同med GAN的L1
         return (buf_0+buf_1)/2
+    def redomain(self,x,target_domain):
+        return (x-self.offset)/self.scale*max(target_domain)+min(target_domain)
     def per(self,x,x_,y,y_):
+        # tf.print(tf.reduce_min([x,x_,y,y_]),tf.reduce_max([x,x_,y,y_]))
+        # x = self.redomain(x,[0.0,255.0])
+        # x_ = self.redomain(x_,[0.0,255.0])
+        # y = self.redomain(y,[0.0,255.0])
+        # y_ = self.redomain(y_,[0.0,255.0])
+        # tf.print(tf.reduce_min([x,x_,y,y_]),tf.reduce_max([x,x_,y,y_]))
         per_loss_x = self.transfer_learning_model(inputs=[x,x_])
         per_loss_y = self.transfer_learning_model(inputs=[y,y_])
+        # tf.print(tf.reduce_min([per_loss_x,per_loss_y]),tf.reduce_max([per_loss_x,per_loss_y]))
         return (per_loss_x+per_loss_y)/2
 #---------------------------------------------------------------------------------------------------------------------------------#
 def mae(x,y):
-    # tf.print("mae")
+    # tf.print('mae')
     return tf.reduce_mean(tf.abs(x-y))
 def mae2(x,y): #但是为了计算速度 不采用此方法
     b = x.shape[0]
@@ -156,8 +167,8 @@ def mae2(x,y): #但是为了计算速度 不采用此方法
 def mse(x,y):
     return tf.reduce_mean(tf.math.square(x-y))
 def feature_difference(x,y,ords=1):#计算2D或3D情况下特征图x,y的差 
-    # 涉及运算效率，不进行输入检查
-    # tf.print("Vper",ords)
+    # 涉及运算效率,不进行输入检查
+    # tf.print('Vper',ords)
     if ords==1:
         return tf.reduce_mean(tf.abs(x-y)) # 在包括batch的维度取均值
     elif ords==2:

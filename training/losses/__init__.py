@@ -1,4 +1,4 @@
 __all__ = [
-    "gan_losses",
-    "image_losses",
+    'gan_losses',
+    'image_losses',
 ]

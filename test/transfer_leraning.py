@@ -8,7 +8,7 @@ import tensorflow_datasets as tfds
 tfds.disable_progress_bar()
 
 train_ds, validation_ds, test_ds = tfds.load(
-    "cats_vs_dogs",
+    'cats_vs_dogs',
     # Reserve 10% for validation and 10% for test
     split=["train[:40%]", "train[40%:50%]", "train[50%:60%]"],
     as_supervised=True,  # Include labels
@@ -27,7 +27,7 @@ for i, (image, label) in enumerate(train_ds.take(9)):
     ax = plt.subplot(3, 3, i + 1)
     plt.imshow(image)
     plt.title(int(label))
-    plt.axis("off")
+    plt.axis('off')
 
 size = (150, 150)
 train_ds = train_ds.map(lambda x, y: (tf.image.resize(x, size), y))
@@ -43,7 +43,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 
 data_augmentation = keras.Sequential(
-    [layers.RandomFlip("horizontal"), layers.RandomRotation(0.1),]
+    [layers.RandomFlip('horizontal'), layers.RandomRotation(0.1),]
 )
 
 import numpy as np
@@ -55,12 +55,12 @@ for images, labels in train_ds.take(1):
         augmented_image = data_augmentation(
             tf.expand_dims(first_image, 0), training=True
         )
-        plt.imshow(augmented_image[0].numpy().astype("int32"))
+        plt.imshow(augmented_image[0].numpy().astype('int32'))
         plt.title(int(labels[0]))
-        plt.axis("off")
+        plt.axis('off')
 
 base_model = keras.applications.Xception(
-    weights="imagenet",  # Load weights pre-trained on ImageNet.
+    weights='imagenet',  # Load weights pre-trained on ImageNet.
     input_shape=(150, 150, 3),
     include_top=False,
 )  # Do not include the ImageNet classifier at the top.

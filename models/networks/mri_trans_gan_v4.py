@@ -1,12 +1,6 @@
-import sys
-import os
-from numpy import broadcast, float32
 import tensorflow as tf
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(base)
-sys.path.append(os.path.join(base,'../'))
-from blocks import mri_trans_gan_2d,mri_trans_gan_3d_special,mri_trans_gan_3d
-from _gan_helper import GeneratorHelper,DiscriminatorHelper
+from models.blocks import mri_trans_gan_2d,mri_trans_gan_3d_special,mri_trans_gan_3d
+from models.networks._gan_helper import GeneratorHelper,DiscriminatorHelper
 """
 做模型结构的探究 
 开辟额外支路
@@ -16,10 +10,10 @@ from _gan_helper import GeneratorHelper,DiscriminatorHelper
 判别器
 """
 __all__ = [ 
-    "Generator",
-    "Discriminator",
+    'Generator',
+    'Discriminator',
 ]
-BLOCKS_DICT = {"2D":mri_trans_gan_2d,"3D_special":mri_trans_gan_3d_special,"3D":mri_trans_gan_3d}
+BLOCKS_DICT = {'2D':mri_trans_gan_2d,'3D_special':mri_trans_gan_3d_special,'3D':mri_trans_gan_3d}
 ###################################################################
 class Generator(tf.keras.Model):
     def __init__(self,args,name=None,dtype=None):
@@ -42,7 +36,7 @@ class Generator(tf.keras.Model):
         except KeyError:
             raise ValueError("dimension type is not supported: "+dimensions_type)
         self.block_list = []
-        self.block_list.append(blocks.Conv7S1(filters=capacity_vector,dtype=dtype,activation="relu"))
+        self.block_list.append(blocks.Conv7S1(filters=capacity_vector,dtype=dtype,activation='relu'))
         self.block_list.append(blocks.DownSampling(filters=capacity_vector*2,dtype=dtype))
         self.block_list.append(blocks.DownSampling(filters=capacity_vector*4,dtype=dtype))
         self.block_list.append(blocks.ResBlocks(filters=capacity_vector*4+capacity_vector*4//8,n=res_blocks_num,dtype=dtype))
@@ -178,7 +172,7 @@ class Discriminator(tf.keras.Model):
         else:
             return y
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
     tf.config.experimental.enable_op_determinism()
@@ -191,10 +185,10 @@ if __name__ == "__main__":
             pass
     args = tmp_args()
     args.capacity_vector = 32
-    args.up_sampling_method = "up_conv"
+    args.up_sampling_method = 'up_conv'
     args.res_blocks_num = 9
     args.self_attention_G = None
-    args.dimensions_type = "3D"
+    args.dimensions_type = '3D'
     args.self_attention_D = None
     args.spectral_normalization = False
     args.sn_iter_k = 1
