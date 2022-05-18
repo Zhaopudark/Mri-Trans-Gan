@@ -1,3 +1,3 @@
 __all__ = [
-    "data_pipeline",
+    'data_pipeline',
 ]

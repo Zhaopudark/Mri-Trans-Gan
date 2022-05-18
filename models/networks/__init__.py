@@ -1,3 +1,3 @@
 __all__ = [ 
-    "network_selector",
+    'network_selector',
 ]

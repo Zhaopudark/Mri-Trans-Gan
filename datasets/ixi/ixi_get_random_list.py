@@ -33,7 +33,7 @@ def get_list(path):
                 # print(dirName)
                 buf_t1_norm.append(os.path.join(dirName,filename))
                 buf_t2_norm.append(os.path.join(dirName[0:-6]+"IXI-T2",tmp[0:-14]+"T2_norm.nii.gz"))
-                buf_mask.append(os.path.join(dirName[0:-6]+"Mask",tmp[0:-14]+"brain_mask.nii.gz"))
+                buf_mask.append(os.path.join(dirName[0:-6]+'Mask',tmp[0:-14]+"brain_mask.nii.gz"))
     file_list = list(zip(buf_t1_norm,buf_t2_norm,buf_mask))
     return file_list
 

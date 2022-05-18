@@ -37,7 +37,7 @@ class DataPipeLine():
                     print(dirName)
                     buf_t1_norm.append(os.path.join(dirName,filename))
                     buf_t2_norm.append(os.path.join(dirName[0:-6]+"IXI-T2",tmp[0:-14]+"T2_norm.nii.gz"))
-                    buf_mask.append(os.path.join(dirName[0:-6]+"Mask",tmp[0:-14]+"brain_mask.nii.gz"))
+                    buf_mask.append(os.path.join(dirName[0:-6]+'Mask',tmp[0:-14]+"brain_mask.nii.gz"))
         file_list = list(zip(buf_t1_norm,buf_t2_norm,buf_mask))
         return file_list
     def read_nii_file(self,path):
@@ -105,7 +105,7 @@ class DataPipeLine():
                 yield item[0],item[1],item[2],np.array(index_buf)
         return None
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     import time 
     from matplotlib import pyplot as plt
     c = DataPipeLine(path="G:\\Datasets\\IXI\\Registration_validate",
@@ -123,7 +123,7 @@ if __name__ == "__main__":
     patch_buf = []
     basic_buf = [0,0,0]
     for _ in range(1):
-        start = time.time()
+        start = time.perf_counter() 
         for i,(t1,t2,mask,index_buf) in enumerate(c.generator()):
             if patch_i==0:
                 black_board = np.array(np.zeros(shape=[240,240,16]))
@@ -136,7 +136,7 @@ if __name__ == "__main__":
             print(i,t1.shape,t1.dtype,t2.shape,t2.dtype,mask.shape,mask.dtype)
             patch_i += 1
             patch_i %= patch_nums
-        print(time.time()-start)
+        print(time.perf_counter() -start)
     print(np.mean(t1),np.mean(t2),np.mean(mask))
         
 

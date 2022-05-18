@@ -5,11 +5,11 @@ import tensorflow as tf
 base = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(base)
 sys.path.append(os.path.join(base,'../'))
-from blocks import mri_trans_gan_2d,mri_trans_gan_3d,mri_trans_gan_3d_special 
-from _gan_helper import GeneratorHelper,DiscriminatorHelper
+from models.blocks import mri_trans_gan_2d,mri_trans_gan_3d,mri_trans_gan_3d_special 
+from models.networks._gan_helper import GeneratorHelper,DiscriminatorHelper
 __all__ = [ 
-    "Generator",
-    "Discriminator",
+    'Generator',
+    'Discriminator',
 ]
 ###################################################################
 class Generator(tf.keras.Model):
@@ -25,7 +25,7 @@ class Generator(tf.keras.Model):
         G_helper = GeneratorHelper(name=name,args=args)
         last_activation_name = G_helper.output_activation_name()
         #--------------------------------------------------------#
-        if dimensions_type=="2D":
+        if dimensions_type=='2D':
             self.block_list = []
             self.block_list.append(mri_trans_gan_2d.Conv7S1(filters=capacity_vector,dtype=dtype))
             self.block_list.append(mri_trans_gan_2d.DownSampling(filters=capacity_vector*2,dtype=dtype))
@@ -35,7 +35,7 @@ class Generator(tf.keras.Model):
             self.block_list.append(mri_trans_gan_2d.UpSampling(filters=capacity_vector,dtype=dtype,up_sampling_method=up_sampling_method))
             tmp_policy = tf.keras.mixed_precision.Policy('float32')
             self.block_list.append(mri_trans_gan_2d.Conv7S1(filters=1,activation=last_activation_name,dtype=dtype,specific_out_dtype=tmp_policy))
-        elif dimensions_type == "3D":
+        elif dimensions_type == '3D':
             self.block_list = []
             self.block_list.append(mri_trans_gan_3d.Conv7S1(filters=capacity_vector,dtype=dtype))
             self.block_list.append(mri_trans_gan_3d.DownSampling(filters=capacity_vector*2,dtype=dtype))
@@ -45,9 +45,9 @@ class Generator(tf.keras.Model):
             self.block_list.append(mri_trans_gan_3d.UpSampling(filters=capacity_vector,dtype=dtype,up_sampling_method=up_sampling_method))
             tmp_policy = tf.keras.mixed_precision.Policy('float32')
             self.block_list.append(mri_trans_gan_3d.Conv7S1(filters=1,activation=last_activation_name,dtype=dtype,specific_out_dtype=tmp_policy))
-        elif dimensions_type == "3D_special":
+        elif dimensions_type == '3D_special':
             self.block_list = []
-            self.block_list.append(mri_trans_gan_3d_special.Conv7S1(filters=capacity_vector,dtype=dtype,activation="relu"))
+            self.block_list.append(mri_trans_gan_3d_special.Conv7S1(filters=capacity_vector,dtype=dtype,activation='relu'))
             self.block_list.append(mri_trans_gan_3d_special.DownSampling(filters=capacity_vector*2,dtype=dtype))
             self.block_list.append(mri_trans_gan_3d_special.DownSampling(filters=capacity_vector*4,dtype=dtype))
             self.block_list.append(mri_trans_gan_3d_special.ResBlocks(filters=capacity_vector*4,n=res_blocks_num,dtype=dtype))
@@ -87,7 +87,7 @@ class Discriminator(tf.keras.Model):
         D_helper = DiscriminatorHelper(name=name,args=args)
         use_sigmoid = D_helper.output_sigmoid_flag()
         #--------------------------------------------------------#
-        if dimensions_type=="2D":
+        if dimensions_type=='2D':
             self.block_list=[]
             self.block_list.append(mri_trans_gan_2d.Conv4S2(filters=capacity_vector,norm=False,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype))
             self.block_list.append(mri_trans_gan_2d.Conv4S2(filters=capacity_vector*2,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype))
@@ -95,7 +95,7 @@ class Discriminator(tf.keras.Model):
             self.block_list.append(mri_trans_gan_2d.Conv4S2(filters=capacity_vector*8,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype))
             tmp_policy = tf.keras.mixed_precision.Policy('float32')
             self.block_list.append(mri_trans_gan_2d.Conv4S1(use_sigmoid=use_sigmoid,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype,specific_out_dtype=tmp_policy))
-        elif dimensions_type == "3D":
+        elif dimensions_type == '3D':
             self.block_list=[]
             self.block_list.append(mri_trans_gan_3d.Conv4S2(filters=capacity_vector,norm=False,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype))
             self.block_list.append(mri_trans_gan_3d.Conv4S2(filters=capacity_vector*2,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype))
@@ -103,7 +103,7 @@ class Discriminator(tf.keras.Model):
             self.block_list.append(mri_trans_gan_3d.Conv4S2(filters=capacity_vector*8,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype))
             tmp_policy = tf.keras.mixed_precision.Policy('float32')
             self.block_list.append(mri_trans_gan_3d.Conv4S1(use_sigmoid=use_sigmoid,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype,specific_out_dtype=tmp_policy))
-        elif dimensions_type == "3D_special":
+        elif dimensions_type == '3D_special':
             self.block_list=[]
             # paper
             self.block_list.append(mri_trans_gan_3d_special.Conv4S2(filters=capacity_vector,norm=False,spectral_normalization=sn_flag,iter_k=sn_iter_k,clip_flag=sn_clip_flag,clip_range=sn_clip_range,dtype=dtype))
@@ -130,7 +130,7 @@ class Discriminator(tf.keras.Model):
             return y,buf
         else:
             return y
-if __name__ == "__main__":
+if __name__ == '__main__':
     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
     x = tf.random.normal(shape=[1,3,128,128,1])
@@ -141,10 +141,10 @@ if __name__ == "__main__":
             pass
     args = tmp_args()
     args.capacity_vector = 32
-    args.up_sampling_method = "up_conv"
+    args.up_sampling_method = 'up_conv'
     args.res_blocks_num = 9
     args.self_attention_G = None
-    args.dimensions_type = "3D_special"
+    args.dimensions_type = '3D_special'
     args.self_attention_D = None
     args.spectral_normalization = False
     args.sn_iter_k = 1

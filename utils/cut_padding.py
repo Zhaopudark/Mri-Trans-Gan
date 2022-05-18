@@ -7,7 +7,7 @@ import math
 import logging
 def cut_img_3D(img):
     """
-    将3D的数据进行剪裁，去除3D黑边
+    将3D的数据进行剪裁,去除3D黑边
     img:numpy array
     return a cut img with same axis number but not a fixed one
     """
@@ -284,7 +284,7 @@ def index_cal(valid_range:list,sub_seq_len:int,sub_seq_num=None):
             if sub_seq_num*sub_seq_len < valid_len:
                 old_sub_seq_num = sub_seq_num
                 sub_seq_num = math.ceil(valid_len/sub_seq_len)
-                logging.warning("sub_seq_num has been changed from {} to {}.".format(old_sub_seq_num,sub_seq_num))
+                logging.warning(f"sub_seq_num has been changed from {old_sub_seq_num} to {sub_seq_num}.")
             else:
                 pass
     index_range_buf = []
@@ -366,7 +366,7 @@ def index_list_rm_bias(index_buf,basic_buf):
         buf.append([index_list[0]-basic,index_list[1]-basic])
     return buf 
          
-if __name__ == "__main__":
+if __name__ == '__main__':
     # import matplotlib
     # matplotlib.use('TkAgg')
     # from matplotlib import pylab as plt
