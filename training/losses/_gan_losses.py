@@ -1,6 +1,7 @@
+import logging
 from typeguard import typechecked
-import tensorflow as tf 
 
+import tensorflow as tf
 """
 一个好的loss计算模块
 计算时对batch 维度独立
@@ -32,7 +33,7 @@ class VanillaGanLoss(tf.keras.losses.Loss):
     def __init__(self,mode:str='L1',name:str='mean_volume_gradient_error',data_format:str='channels_last',**kwargs) -> None:
         if 'reduction' in kwargs.keys():
             if kwargs['reduction'] != tf.keras.losses.Reduction.NONE:
-                logging.warning("""
+                logging.getLogger(__name__).warning("""
                     MeanVolumeGradientError will reduce output by its own reduction. 
                     Setting `reduction` is ineffective.
                     Output will be reduce to [B,{N-2},C] shape whether the input_shape is 
@@ -65,7 +66,7 @@ class VanillaGanLoss(tf.keras.losses.Loss):
         # if hasattr(self,'loss_kwargs'):
         #     config = {**self.loss_kwargs}     
         # base_config = super().get_config()
-        # return dict(list(base_config.items()) + list(config.items()))
+        # return base_config|config
 
 class GanLoss():
     """
@@ -80,9 +81,9 @@ class GanLoss():
         elif loss_name.lower() == 'wgan':
             self.gan_loss = _WGanLoss(loss_name,counters_dict=self.__counters_dict)
         elif loss_name.lower() == "wgan-gp":
-            penalty_l = float(args.wgp_penalty_l)
-            initial_seed = int(args.wgp_initial_seed)
-            random_always = bool(args.wgp_random_always)
+            penalty_l = float(args['wgp_penalty_l'])
+            initial_seed = int(args['wgp_initial_seed'])
+            random_always = bool(args['wgp_random_always'])
             random_generator = tf.random.Generator.from_seed(initial_seed)
             self.__counters_dict['wgp_random_generator'] = random_generator # 会被模型函数中的check point 记录
             self.gan_loss = _WGanGpLoss(loss_name,counters_dict=self.__counters_dict,penalty_l=penalty_l,initial_seed=initial_seed,random_always=random_always)
@@ -293,6 +294,5 @@ if __name__=='__main__':
     for item1,item2 in zip(buf1,buf2):
         _sum += tf.reduce_sum(item1-item2)
     print(_sum)
-    print('$1')
     print("测试schedule是否可以落实 如果sum=0 表示带有schedule的optimizers可以顺利保存内部的step(即iteration)并在下次求导时正确应用schedule",_sum)
 

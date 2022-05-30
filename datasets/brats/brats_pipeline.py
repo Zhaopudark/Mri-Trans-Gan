@@ -11,7 +11,6 @@ import copy
 from utils.dataset_helper import read_nii_file,data_dividing,random_datas,get_random_from_seed
 from utils.dtype_helper import reduce_same
 from utils.image.patch_process import index_cal
-from utils.dataset_helper import path_norm
 from datasets.brats.brats_data import BraTSDataPathCollection
 from datasets.brats.brats_data import BraTSBase
 from datasets.brats.brats_data import BraTSData
@@ -90,12 +89,12 @@ class RecordManager():
     """
     @typechecked
     def __init__(self,path:str="./",) -> None:
-        self.path = path_norm(path)
+        self.path = os.path.normpath(path)
         if not os.path.exists(self.path):
             os.mkdir(self.path)
         assert os.path.isdir(self.path)
     def _get_target_path(self,name:str):
-        return path_norm(f"{self.path}\\{name}.npz") 
+        return os.path.normpath(f"{self.path}\\{name}.npz") 
     def load(self,name:str,structure:dict[str,Any],gen_func:Callable[[],dict[str,np.ndarray]])->Sequence[np.ndarray]:
         keys = structure.keys()
         files_getter = operator.itemgetter(*keys)

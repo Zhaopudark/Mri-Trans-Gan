@@ -1,4 +1,6 @@
-import tensorflow as tf   
+import logging
+import tensorflow as tf
+   
 """
 一个好的loss计算模块
 计算时对batch 维度独立
@@ -8,6 +10,7 @@ import tensorflow as tf
 __all__ = [
     'GanLoss',
 ]
+
 class GanLoss():
     """
     原则
@@ -21,9 +24,9 @@ class GanLoss():
         elif loss_name.lower() == 'wgan':
             self.gan_loss = _WGanLoss(loss_name,counters_dict=self.__counters_dict)
         elif loss_name.lower() == "wgan-gp":
-            penalty_l = float(args.wgp_penalty_l)
-            initial_seed = int(args.wgp_initial_seed)
-            random_always = bool(args.wgp_random_always)
+            penalty_l = float(args['wgp_penalty_l'])
+            initial_seed = int(args['wgp_initial_seed'])
+            random_always = bool(args['wgp_random_always'])
             random_generator = tf.random.Generator.from_seed(initial_seed)
             self.__counters_dict['wgp_random_generator'] = random_generator # 会被模型函数中的check point 记录
             self.gan_loss = _WGanGpLoss(loss_name,counters_dict=self.__counters_dict,penalty_l=penalty_l,initial_seed=initial_seed,random_always=random_always)
@@ -94,9 +97,13 @@ class _WGanLoss():
         self.__counters_dict = counters_dict
     def discriminator_loss(self,D_real,D_fake,**kwargs):
         D_loss = -tf.reduce_mean(D_real)+tf.reduce_mean(D_fake)#用batch 均值逼近期望 然后依据公式 max  所以取反  -E(real)+E(fake)  做min
+        # tf.print("D_loss",D_loss)
+        D_loss = tf.clip_by_value(D_loss,-10.,+10.)
         return D_loss
     def generator_loss(self,D_real,D_fake,**kwargs):
         G_loss = -tf.reduce_mean(D_fake)
+        # tf.print("G_loss",G_loss)
+        G_loss = tf.clip_by_value(G_loss,-10.,+10.)
         return G_loss
     
 class _WGanGpLoss():
@@ -113,9 +120,16 @@ class _WGanGpLoss():
     def discriminator_loss(self,D_real,D_fake,real_samples=None,fake_samples=None,D=None,condition=None):
         penalty = self.penalty_loss(real_samples,fake_samples,D,condition)
         D_loss = -tf.reduce_mean(D_real)+tf.reduce_mean(D_fake)+tf.reduce_mean(penalty) #用batch 均值逼近期望 然后依据公式 max  所以取反  -E(real)+E(fake)  做min
+        # logging.getLogger(__name__).info("not cliping")
+
+        D_loss = tf.clip_by_value(D_loss,-10.,+10.)
+        logging.getLogger(__name__).info("cliping")
+        # print("cliping")
         return D_loss
     def generator_loss(self,D_real,D_fake,**kwargs):
-        return -tf.reduce_mean(D_fake)
+        G_loss = -tf.reduce_mean(D_fake)
+        G_loss = tf.clip_by_value(G_loss,-10.,+10.)
+        return G_loss
     def penalty_loss(self,real_samples,fake_samples,D,condition=None):
         if self.noise_shape is None:
             noise_shape = [real_samples.shape[0]]
@@ -234,6 +248,5 @@ if __name__=='__main__':
     for item1,item2 in zip(buf1,buf2):
         _sum += tf.reduce_sum(item1-item2)
     print(_sum)
-    print('$1')
     print("测试schedule是否可以落实 如果sum=0 表示带有schedule的optimizers可以顺利保存内部的step(即iteration)并在下次求导时正确应用schedule",_sum)
 

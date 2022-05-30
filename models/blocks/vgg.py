@@ -3,9 +3,10 @@ import logging
 from typeguard import typechecked
 from typing import Iterable
 import functools
+
 import numpy as np 
 import tensorflow as tf
-from enum import Enum
+
 from training.losses._image_losses import LossAcrossListWrapper
 from training.losses._image_losses import MeanFeatureReconstructionError
 from training.losses._image_losses import MeanStyleReconstructionError
@@ -56,7 +57,7 @@ class FeatureMapsGetter(tf.keras.layers.Layer):
         else:
             name = f"{model_name}_feature_maps_getter"
         if 'dtype' in kwargs.keys() and kwargs['dtype'] is not None:
-            logging.warning("""
+            logging.getLogger(__name__).warning("""
                 Setting FeatureMapsGetter's dtype to a specific dtype but not `None` may fail to meet the user's expectations. Since the actually dtype should follow 
                 model's practical dtype. For numerical stability, we mandatorily set dtype to None. 
                 """)
@@ -148,7 +149,7 @@ class FeatureMapsGetter(tf.keras.layers.Layer):
             return use_pooling
         if concerned_index < threshold:
             return use_pooling
-        logging.warning(
+        logging.getLogger(__name__).warning(
             f"""
                 To avoid huge amount of calculation, when the index of layer, which give out wanted feature map, reaches or exceed the index threshold {threshold},
                 the basic model will use pooling mandatorily, and `use_pooling` flag set by user will be ignored.
@@ -474,7 +475,7 @@ class PerceptualLossExtractor(tf.keras.layers.Layer):
         else:
             name = f"{model_name}_perceptual_loss_extractor"
         if 'dtype' in kwargs.keys() and kwargs['dtype'] is not None:
-            logging.warning("""
+            logging.getLogger(__name__).warning("""
                 Setting FeatureMapsGetter's dtype to a specific dtype but not `None` may fail to meet the user's expectations. Since the actually dtype should follow 
                 model's practical dtype. For numerical stability, we mandatorily set dtype to None. 
                 """)

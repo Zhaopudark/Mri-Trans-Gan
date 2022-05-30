@@ -1,0 +1,160 @@
+
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
+tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
+import functools
+
+INPUT_SHAPE = (32, 32, 3)
+BATCH_SIZE = 256
+CLASS_COUNT = 10
+
+def get_train_val_test():
+    width, height, _ = INPUT_SHAPE
+
+    get_dataset = functools.partial(
+        tf.keras.utils.image_dataset_from_directory,
+        batch_size=BATCH_SIZE,
+        image_size=(width, height),
+        label_mode="categorical",
+        shuffle=True,
+        seed=42,
+        color_mode="rgb",
+    )
+
+    train: tf.data.Dataset = get_dataset(directory="tmp/train_val_test/train")
+    val: tf.data.Dataset = get_dataset(directory="tmp/train_val_test/val")
+    test: tf.data.Dataset = get_dataset(directory="tmp/train_val_test/test")
+
+    # sanity checks
+    train_data_sample, train_target_sample = list(train.take(1).as_numpy_iterator())[0]
+    assert train_data_sample.shape == (BATCH_SIZE, *INPUT_SHAPE)
+    assert train_target_sample.shape == (BATCH_SIZE, CLASS_COUNT)
+
+    val_data_sample, val_target_sample = list(val.take(1).as_numpy_iterator())[0]
+    assert val_data_sample.shape == (BATCH_SIZE, *INPUT_SHAPE)
+    assert val_target_sample.shape == (BATCH_SIZE, CLASS_COUNT)
+
+    test_data_sample, test_target_sample = list(test.take(1).as_numpy_iterator())[0]
+    assert test_data_sample.shape == (BATCH_SIZE, *INPUT_SHAPE)
+    assert test_target_sample.shape == (BATCH_SIZE, CLASS_COUNT)
+
+    return (
+        train.prefetch(tf.data.AUTOTUNE),
+        val.prefetch(tf.data.AUTOTUNE),
+        test.prefetch(tf.data.AUTOTUNE),
+    )
+
+
+
+
+def get_model():
+    model = tf.keras.Sequential(
+        [
+            tf.keras.Input(shape=INPUT_SHAPE),
+            tf.keras.layers.Conv2D(
+                filters=32, kernel_size=3, strides=2, padding="same"
+            ),
+            tf.keras.layers.Activation("relu"),
+            #
+            tf.keras.layers.Conv2D(
+                filters=64, kernel_size=3, strides=2, padding="same"
+            ),
+            tf.keras.layers.Activation("relu"),
+            #
+            tf.keras.layers.Flatten(),
+            tf.keras.layers.Dense(128),
+            tf.keras.layers.Activation("relu"),
+            #
+            tf.keras.layers.Dense(CLASS_COUNT),
+            tf.keras.layers.Activation("softmax"),
+        ]
+    )
+    optimizer = tf.keras.optimizers.SGD(0.001)
+    model.compile(
+        optimizer=optimizer,
+        loss="categorical_crossentropy",
+        metrics=["accuracy"],
+    )
+
+    return model
+
+
+
+# class Mylayer(tf.keras.layers.Layer):
+#     def __init__(self) -> None:
+#         super().__init__()
+#         self.sequential_layers = []
+#         self.sequential_layers.append(
+#             tf.keras.layers.Conv2D(
+#                 filters=32, kernel_size=3, strides=2, padding="same")
+#         )
+#         self.sequential_layers.append(
+#             tf.keras.layers.Activation("relu")
+#         )
+#         self.sequential_layers.append(
+#             tf.keras.layers.Conv2D(
+#                 filters=64, kernel_size=3, strides=2, padding="same"
+#             )
+#         )
+#         self.sequential_layers.append(
+#             tf.keras.layers.Activation("relu")
+#         )
+#         self.sequential_layers.append(
+#             tf.keras.layers.Flatten()
+#         )
+#         self.sequential_layers.append(
+#             tf.keras.layers.Dense(128)
+#         )
+#         self.sequential_layers.append(
+#             tf.keras.layers.Activation("relu")
+#         )
+#         self.sequential_layers.append(
+#             tf.keras.layers.Dense(CLASS_COUNT)
+#         )
+#         self.sequential_layers.append(
+#             tf.keras.layers.Activation("softmax")
+#         )
+#     def call(self,inputs):
+#         y = inputs
+#         for layer in self.sequential_layers:
+#             y = layer(y)
+#         return y
+
+# class MyModel(tf.keras.Model):
+#     def __init__(self) -> None:
+#         super().__init__()
+#         self.layer = Mylayer()
+#     def call(self,inputs):
+#         return self.layer(inputs)
+import csv
+def write_csv(filename,head_list,row_lists):
+    with open(filename,mode='w',newline='') as f:
+        f = csv.writer(f)
+        f.writerow(head_list)
+        f.writerows(row_lists)
+
+def why_u_inconsistent(index):
+    tf.keras.utils.set_random_seed(0)
+    # tf.config.experimental.enable_op_determinism()
+    train, val, test = get_train_val_test()
+
+    model = get_model()
+    model.fit(train, validation_data=val, epochs=10, verbose=0)
+    scores = model.evaluate(test, verbose=0)
+    for name, value in zip(model.metrics_names, scores):
+        print(f"test {name}: {value}")
+
+
+
+def main():
+    for run_nr in range(5):
+        print(f"run: {run_nr}")
+        why_u_inconsistent(run_nr)
+        print("=====")
+
+
+if __name__ == "__main__":
+    main()

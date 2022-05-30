@@ -1,10 +1,8 @@
 import itertools
 import functools
-import sys
 import os
-import csv
+from matplotlib.pyplot import bar
 from typeguard import typechecked
-from alive_progress import alive_bar
 from dataclasses import dataclass,field
 from enum import Enum
 from typing import Generator,Callable,Any
@@ -12,8 +10,8 @@ import re
 import collections
 import numpy as np
 import copy
-from utils.dataset_helper import path_norm
 from utils.dtype_helper import nested_dict_key_sort,gen_key_value_from_nested_dict,check_nested_dict
+from utils.bar_helper import func_bar_injector
 #-------------------------------------------------------------#
 def is_affine_euqal(affine1,affine2):
     # 依据brats文件的特性而定义, 比较两个 affine 是否相等
@@ -34,13 +32,14 @@ def is_header_euqal(header1,header2):
 
 class BraTSBase(Enum):
     FILE_PATTERN = r'RSNA_ASNR_MICCAI_BraTS(?P<year>\d*)_(?P<training_type>Training|Validation)Data(?:\\{1}|[/]{1})(?P<patient_id>BraTS\d+_\d+)(?:\\{1}|[/]{1})(?P=patient_id)_(?P<modality>flair|t1ce|t1|t2)?(?:_)?(?P<info>\w*)?(?P<suffix>\.nii\.gz|\.csv|\.*)$'
-    BASE_PATTERN = r'(BraTS\d+_\d+)(?:_)(flair|t1ce|t1|t2)(\.nii\.gz)$' # used when gen path (by re.sub) from a base existed and correct path 
-    REPL_BASE_PATTERN = '\\1_{}\\3' # used when gen path (by re.sub) from a base existed and correct path 
+    BASE_PATTERN = r'(?P<patient_id>BraTS\d+_\d+)(?:_)(?P<modality>flair|t1ce|t1|t2)(?P<suffix>\.nii\.gz)$' # used when gen path (by re.sub) from a base existed and correct path 
+    REPL_BASE_PATTERN = r'\g<patient_id>_{}\g<suffix>' # used when gen path (by re.sub) from a base existed and correct path 
     KEY_NAMES = ('training_type','patient_id','modality','info')
     KEY_ORDERS = (('Training','Validation'),None,('flair','t1','t1ce','t2'),None)
     AXES_FORMAT = ('coronal', 'sagittal', 'vertical')
     AXES_DIRECTION_FORMAT = ("R:L", "A:P", "I:S")
     SIZE = (240,240,155)
+
 @dataclass(slots=True)
 class BraTSData():
     """
@@ -76,12 +75,11 @@ class BraTSDataPathCollection(collections.UserDict):
     #----------------------------------------------------#
     @typechecked
     def __init__(self,path:str) -> None:
-        self._input_path = path_norm(path)
+        self._input_path = os.path.normpath(path)
         self._path_match_pattern = re.compile(BraTSBase.FILE_PATTERN.value)
         self._path_gen_pattern = re.compile(BraTSBase.BASE_PATTERN.value)
         super().__init__()
-        with alive_bar(ctrl_c=False, title='Loading data paths:',) as bar:  
-            self._load_paths(self._input_path,bar)
+        self._load_paths(self._input_path)
     def _map_path2keyspath(self,path:str):# add specific rules in this func
         matched = self._path_match_pattern.search(path)
         if matched is not None:
@@ -109,19 +107,20 @@ class BraTSDataPathCollection(collections.UserDict):
 
         match keys: #rules
             case [_,_,'shared',info]:
-               repl_pattern = BraTSBase.REPL_BASE_PATTERN.value.format(f"{info}")
+                return self._path_gen_pattern.sub(BraTSBase.REPL_BASE_PATTERN.value,base_path).format(f"{info}")
             case [_,_,modality,info]:# not shared
-               repl_pattern = BraTSBase.REPL_BASE_PATTERN.value.format(f"{modality}_{info}")
+                return self._path_gen_pattern.sub(BraTSBase.REPL_BASE_PATTERN.value,base_path).format(f"{modality}_{info}")
             case _:
                 raise ValueError("")
-        return self._path_gen_pattern.sub(repl_pattern,base_path)
-    def _load_paths(self,path:str,bar:Callable):
+    @func_bar_injector(bar_name="Path Loading...... ")
+    def _load_paths(self,path:str,bar:Callable=None):
         for (dir_name,_,file_list) in os.walk(path):
             for file_name in file_list:
                 keys,path = self._map_path2keyspath(os.path.join(dir_name,file_name))
                 if keys is not None:
                     self[keys] = path
-                bar()
+                if bar is not None:
+                    bar()
         self.data = nested_dict_key_sort(self.data,BraTSBase.KEY_ORDERS.value,bar)
     @typechecked
     def __setitem__(self,key:tuple[str,...],item:str) -> None:
@@ -152,11 +151,14 @@ class BraTSDataPathCollection(collections.UserDict):
             case _:
                 raise ValueError("") #TODO add some illustration
     @typechecked
+    @func_bar_injector(bar_name="Path Checking......")
+    def _data_checking(self,keys:tuple[int|str|None|tuple[str,...],...],bar:Callable=None):
+        check_nested_dict(self.data,keys,previous_keys=[],value_func=self._map_keys2path,bar=bar)
+        self.data = nested_dict_key_sort(self.data,BraTSBase.KEY_ORDERS.value,bar)
+    @typechecked
     def generator(self,keys:tuple[int|str|None|tuple[str,...],...])->Generator[tuple[tuple[str,...],str],None,None]:
-        with alive_bar(ctrl_c=False, title='Checking data paths before generation:',) as bar:  
-            check_nested_dict(self.data,keys,previous_keys=[],value_func=self._map_keys2path,bar=bar)
-            self.data = nested_dict_key_sort(self.data,BraTSBase.KEY_ORDERS.value,bar)
-        return gen_key_value_from_nested_dict(self.data,keys)   
+        self._data_checking(keys)
+        return gen_key_value_from_nested_dict(self.data,keys) 
     @typechecked
     def get_individual_datas(self,individual_identities:str,shared_identities:list[str]=None)->list[BraTSData]:
         """
@@ -249,15 +251,15 @@ class BraTSDataPathCollection(collections.UserDict):
 
 
 # data_path_collection = BraTSDataPathCollection(path="D:\\Datasets\\BraTS\\BraTS2021_new")
-# input_datas = data_path_collection.get_individual_datas('main',['mask'])
+# input_datas = data_path_collection.get_individual_datas('main',['masksss'])
 # length1 = len(input_datas)
 # input_datas = BraTSDataPathCollection.reduce_datas(input_datas)
 # def check(x1,x2):
 #     assert x1==x2 
 #     return x2
 # length2 = functools.reduce(check,map(len,input_datas.values()))
-# mask_paths = input_datas.pop('mask')
-# mask_paths = BraTSDataPathCollection.inverse_reduce_datas({'mask':mask_paths})
+# mask_paths = input_datas.pop('masksss')
+# mask_paths = BraTSDataPathCollection.inverse_reduce_datas({'masksss':mask_paths})
 # assert len(list(mask_paths)) == length2 == length1
 
 # data_path_collection = BraTSDataPathCollection(path="D:\\Datasets\\BraTS\\BraTS2021_new")
@@ -280,6 +282,3 @@ class BraTSDataPathCollection(collections.UserDict):
 # for inputs,outputs in zip(input_datas,output_datas):
 #     for (k1,v1),(k2,v2) in zip(inputs.items(),outputs.items()):
 #         assert k1==k2 
-
-
-   

@@ -1,14 +1,8 @@
-import os
-import re 
-import sys
-import tensorflow as tf
-import matplotlib.pyplot as plt
-plt.switch_backend('agg')
-import numpy as np
-from PIL import Image
 import datetime
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(base,'../'))
+import logging
+
+import tensorflow as tf
+
 from models.networks.network_selector import NetworkSelector
 from training.optimizers.optimizer import Optimizer
 from training.losses.gan_losses import GanLoss
@@ -16,21 +10,21 @@ from training.losses.image_losses import DualGanReconstructionLoss
 from training.losses.image_losses import CycleConsistencyLoss
 from training.process.train_process import TrainProcess 
 from training.checkpoint.checkpoint_writer import Checkpoint
-from training.logs.logs_maker import LogsMaker
+from training.summary.summary_maker import LogsMaker
 from utils.image.image_process import Drawer
 from training.metrics.metrics_conductor import MetricsConductor
 from datasets.data_pipeline import DataPipeline
-import itertools
 from typeguard import typechecked
 __all__ = [ 
     'MriTransGan',
 ]
 class MriTransGan():
-    def __init__(self,args):
+    @typechecked
+    def __init__(self,args:dict):
         #-----------------------counters-dict---------------------#
         # 计数器 在模型中定义 同时给检查点(checkpoint) 日志 (logs_maker) 和模型网络(gan_process)
-        self.steps = int(args.steps) # 目标训练步数
-        self.epochs = int(args.epochs) # 目标训练周期
+        self.steps = int(args['steps']) # 目标训练步数
+        self.epochs = int(args['epochs']) # 目标训练周期
         self.step = tf.Variable(0,dtype=tf.int64,trainable=False)
         self.epoch = tf.Variable(0,dtype=tf.int64,trainable=False)
         self.counters_dict = {'step':self.step,'epoch':self.epoch}
@@ -40,7 +34,7 @@ class MriTransGan():
         self.patch_combiner = self.dataset.data_pipeline.patch_combine_generator
         self.input_shape = [1,16,128,128,1]
         #------------------------model------------------------#
-        _mixed_precision = bool(args.mixed_precision)
+        _mixed_precision = bool(args['mixed_precision'])
         if _mixed_precision:
             _policy = tf.keras.mixed_precision.Policy('mixed_float16')
         else:
@@ -53,8 +47,8 @@ class MriTransGan():
         self.D1 = _GAN['discriminator'](args=args,name='D_1_x',dtype=_policy)
         self.models_list = [self.D0,self.D1,self.G0,self.G1]
         #------------------------optimizer-training-process------------------------# 
-        _G_learning_rate = float(args.G_learning_rate)
-        _D_learning_rate = float(args.D_learning_rate)
+        _G_learning_rate = float(args['G_learning_rate'])
+        _D_learning_rate = float(args['D_learning_rate'])
         # _Do = Optimizer(_D_learning_rate,args=args,name='Do')
         # _Go = Optimizer(_G_learning_rate,args=args,name='Go')
         _Do0 = Optimizer(_D_learning_rate,args=args,name='Do0')
@@ -71,26 +65,28 @@ class MriTransGan():
         self.train_process = TrainProcess(args=args)
         
         #-----------------------losses---------------------#
-        _gan_loss_name = args.gan_loss_name
+        _gan_loss_name = args['gan_loss_name']
         self.gan_loss = GanLoss(_gan_loss_name,args=args,counters_dict=self.counters_dict) 
         self.cycle_loss = CycleConsistencyLoss(args=args)
         self.rec_loss = DualGanReconstructionLoss(args=args)
         #----------------logs-checkpoint-config--------------------#
-        self.weight_path = args.weight_path # 初始化时加载
-        self.logs_path = args.logs_path
-        self.logs_interval = int(args.logs_interval)
-        _checkpoint_interval = int(args.checkpoint_interval)
-        _checkpoint_max_keep = int(args.checkpoint_max_keep)
-        _metrics_list = args.metrics_list
+        self.weight_path = args['weight_path'] # 初始化时加载
+        self.logs_path = args['logs_path']
+        self.logs_interval = int(args['logs_interval'])
+        _checkpoint_interval = int(args['checkpoint_interval'])
+        _checkpoint_max_keep = int(args['checkpoint_max_keep'])
+        _metrics = args['metrics']
         self.checkpoint = Checkpoint(counters_dict=self.counters_dict,
                                      path=self.logs_path,
                                      max_to_keep=_checkpoint_max_keep,
                                      checkpoint_interval=_checkpoint_interval,
                                      optimizers = self.optimizers_list,
                                      models = self.models_list)
-        self.metrics = MetricsConductor(_metrics_list) # NOTE 独立于LogsMaker之外 迫使LogsMaker只负责记录而避免设计具体的计算或者绘图细节
+        self.metrics = MetricsConductor(_metrics) # NOTE 独立于LogsMaker之外 迫使LogsMaker只负责记录而避免设计具体的计算或者绘图细节
         self.drawer = Drawer() # NOTE 独立于LogsMaker之外 迫使LogsMaker只负责记录而避免设计具体的计算或者绘图细节           
         self.logs_maker = LogsMaker(counters_dict=self.counters_dict,path=self.logs_path)
+        self.train_bar = tf.keras.utils.Progbar(None,width=30,verbose=1,interval=0.5,stateful_metrics=None,unit_name='train_step')
+        self.validate_or_test_bar = tf.keras.utils.Progbar(None,width=30,verbose=1,interval=0.5,stateful_metrics=None,unit_name='validate_or_test_step')
     #-----------------build-------------------------#
     def build(self): 
         """
@@ -109,6 +105,7 @@ class MriTransGan():
     def combination(self,dataset,predict_func): # NOTE 这部分内容很繁杂 但必须写在这里 这是模型面向具体任务的细化 写在别处将导致维护和调试的时间成本太高 风险太大
         def test_step_wrapper(dataset):
             for item in dataset:
+                self.validate_or_test_bar.add(1)
                 x = item['t1']
                 y = item['t2']
                 mask = item['mask']
@@ -149,18 +146,18 @@ class MriTransGan():
                 x_ = item['x_']['img']
                 y  = item['y']['img']
                 m  = item['mask']['img']
-                print('1x',x.shape,x.numpy().min(),x.numpy().max())
-                print('1y_',y_.shape,y_.numpy().min(),y_.numpy().max())
-                print('1x_',x_.shape,x_.numpy().min(),x_.numpy().max())
-                print('1y',y.shape,y.numpy().min(),y.numpy().max())
+                logging.getLogger(__name__).debug('1x %s %s %s',x.shape,x.numpy().min(),x.numpy().max())
+                logging.getLogger(__name__).debug('1y_ %s %s %s',y_.shape,y_.numpy().min(),y_.numpy().max())
+                logging.getLogger(__name__).debug('1x_ %s %s %s',x_.shape,x_.numpy().min(),x_.numpy().max())
+                logging.getLogger(__name__).debug('1y %s %s %s',y.shape,y.numpy().min(),y.numpy().max())
                 x = unit(x,m)
                 y_ = unit(y_,m)
                 x_ = unit(x_,m)
                 y = unit(y,m)
-                print('2x',x.shape,x.numpy().min(),x.numpy().max())
-                print('2y_',y_.shape,y_.numpy().min(),y_.numpy().max())
-                print('2x_',x_.shape,x_.numpy().min(),x_.numpy().max())
-                print('2y',y.shape,y.numpy().min(),y.numpy().max())
+                logging.getLogger(__name__).debug('2x %s %s %s',x.shape,x.numpy().min(),x.numpy().max())
+                logging.getLogger(__name__).debug('2y_ %s %s %s',y_.shape,y_.numpy().min(),y_.numpy().max())
+                logging.getLogger(__name__).debug('2x_ %s %s %s',x_.shape,x_.numpy().min(),x_.numpy().max())
+                logging.getLogger(__name__).debug('2y %s %s %s',y.shape,y.numpy().min(),y.numpy().max())
                 yield {'x':x,'y_':y_,'x_':x_,'y':y}
         def dict_wrapper(iterable):
             for item in iterable:
@@ -250,6 +247,7 @@ class MriTransGan():
         # self.epoch 代表已完成的epoch
         for epoch in range(self.epoch.numpy()+1,self.epochs+1):
             for step,item in zip(range(self.step.numpy()+1,self.steps+1),self.train_set):
+                self.train_bar.add(1)
                 t1,t2,mask,m,v = item['t1'],item['t2'],item['mask'],item['patch_mask'],item['patch_padding_vector']
                 x = t1
                 y = t2
@@ -309,10 +307,10 @@ class MriTransGan():
     def weight_initial(self):
         status = self._weight_load()
         if status:
-            print("Weight is Existed already and will not be saved!!")
+            logging.getLogger(__name__).info("Weight is Existed already and will not be saved!!")
             # 很重要 防止训练程序不小心改写weight
         else:
-            print("Weight is not Existed and will be saved!")
+            logging.getLogger(__name__).info("Weight is not Existed and will be saved!")
             self._weight_save() #确保仅有initial可以保存初始化权重 宁可报错也不可轻易改写
     def _weight_save(self):
         time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -323,16 +321,16 @@ class MriTransGan():
             _path = self.weight_path+"-"+time_stamp+"/"+item.name+"/" 
             # 很重要 防止训练程序不小心改写weight的双保险
             item.save_weights(_path)
-        print("Weight saved Successfully!")
+        logging.getLogger(__name__).info("Weight saved Successfully!")
     def _weight_load(self): # 该方法不应当被其余文件调用 
         try:
             for item in self.models_list:
                 _path = self.weight_path+"/"+item.name+"/"
                 item.load_weights(_path)
-            print("Weight loaded Successfully!")
+            logging.getLogger(__name__).info("Weight loaded Successfully!")
             return True
         except tf.errors.NotFoundError:
-            print("Weight loading Failed! Not Found")
+            logging.getLogger(__name__).info("Weight loading Failed! Not Found")
             return False
         except ValueError:
             raise ValueError("Weight loading Failed! Unmatched Weight. Please rename init flag and retry!")

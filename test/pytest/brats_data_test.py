@@ -1,8 +1,6 @@
 import os 
 import sys
 import platform
-import logging
-
 import pytest
 import itertools
 import numpy as np

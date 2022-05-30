@@ -77,12 +77,12 @@ def generate_and_save_images(model, epoch, test_input):
         plt.subplot(10,10,i+1)
         plt.imshow(tf.reshape(predictions[i,:],shape=(28,28))*255.0, cmap='gray')
         plt.axis('off')
-    plt.savefig('./SGAN/image_at_epoch_{:04d}.png'.format(epoch))
+    plt.savefig('./tmp/image_at_epoch_{:04d}.png'.format(epoch))
     plt.close()
-for epo in range(2000):
+for epo in range(10000):
     for step, x in enumerate(dataset):
         d_loss,g_loss = training_step(x)
-    if epo%100==0:
+    if epo%500==0:
         print("epo:", epo, "d_loss:", d_loss," g_loss:",g_loss)
         generate_and_save_images(g,epo,seed)
         # Stop after 1000 steps.

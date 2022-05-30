@@ -1,8 +1,53 @@
-from typeguard import typechecked
-from typing import Callable,Iterable,AnyStr,Any,Sequence
-import logging
+
+import os
+import re 
+import ast
 import itertools
 import functools
+import platform
+from typing import Callable,Iterable,Any
+from typeguard import typechecked
+
+@typechecked
+def flatten(items:Iterable):
+    for item in items:
+        match item:
+            case str(item)|bytes(item)|int(item)|float(item)|complex(item):
+                yield item
+            case item if isinstance(item,Iterable):
+                yield from flatten(item)
+            case item:
+                raise ValueError(f"{item} in unexpected type:{type(item)}.")
+@typechecked
+def norm_tuple(tuple_like:Any,depth:int=0):
+    """
+    converted `tuple_like` object to a maybe-nested tuple
+    each `Iterable` type in nested structure will be converted
+    do not convert first level's `non-Iterable` elements
+    such as 
+    >>> x = [1,-2,['abc',b'a',[True,6.0,[None,"a"]]],{"a":2},{'a','b'}]
+    >>> norm_tuple(x)
+    >>> (1, -2, ('abc', b'a', (True, 6.0, (None, 'a'))), ('a',), ('a', 'b'))
+
+    but `non-Iterable` inputs will be converted to a single value tuple
+    such as:
+    >>> x = True
+    >>> norm_tuple(x)
+    >>> (True,)
+    """
+    match tuple_like,depth:
+        case x,d if (isinstance(x,(str,bytes))) or (not isinstance(x,Iterable)):
+            if d==0:
+                return (x,)
+            else:
+                return x
+        case x,d if isinstance(x,Iterable):
+            return tuple([norm_tuple(item,d+1) for item in x])
+        case x:
+            raise ValueError(f"{x} in unexpected type:{type(x)}.")
+@typechecked
+def get_tuple_from_string(x:str)->tuple:
+    return norm_tuple(ast.literal_eval(x))
 
 @typechecked
 def reduce_with_map(reduce_func:Callable,inputs:Iterable[Any],map_func:Callable[[Any],Any]=None):
@@ -21,43 +66,34 @@ def reduce_same(inputs:Iterable[Any],map_func:Callable[[Any],Any]=None):
         return x1 
     return reduce_with_map(_check,inputs,map_func=map_func)
     
-@typechecked
-def find_first_target(maybe_iterable,target_type:type=str):
-    if isinstance(maybe_iterable,target_type):
-        return maybe_iterable
-    elif isinstance(maybe_iterable,Iterable):
-        if isinstance(maybe_iterable,dict):
-            for k,v in maybe_iterable.items():
-                if isinstance(v,target_type):
-                    return v
-                elif isinstance(v,(dict,set,tuple,list)):
-                    try:
-                        return find_first_target(v,target_type)
-                    except ValueError:
-                        continue
-                else:
-                    continue
-        else:
-            for item in maybe_iterable:
-                if isinstance(item,target_type):
-                    return item
-                elif isinstance(item,(dict,set,tuple,list)):
-                    try:
-                        return find_first_target(item,target_type)
-                    except ValueError:
-                        continue
-                else:
-                    continue
-    raise ValueError(f"Cannot find target_type {target_type}")
-
-@typechecked
-def norm_tuple(tuple_like:str|float|int|None|tuple[str|int|float|None,...]|list[str|int|float|None])->tuple:
-    if isinstance(tuple_like,(str,int,float)) or tuple_like is None:
-        return (tuple_like,)
-    elif isinstance(tuple_like,list):
-        return tuple(tuple_like)
-    else:
-        return tuple_like
+# @typechecked
+# def find_first_target(maybe_iterable,target_type:type=str):
+#     if isinstance(maybe_iterable,target_type):
+#         return maybe_iterable
+#     elif isinstance(maybe_iterable,Iterable):
+#         if isinstance(maybe_iterable,dict):
+#             for k,v in maybe_iterable.items():
+#                 if isinstance(v,target_type):
+#                     return v
+#                 elif isinstance(v,(dict,set,tuple,list)):
+#                     try:
+#                         return find_first_target(v,target_type)
+#                     except ValueError:
+#                         continue
+#                 else:
+#                     continue
+#         else:
+#             for item in maybe_iterable:
+#                 if isinstance(item,target_type):
+#                     return item
+#                 elif isinstance(item,(dict,set,tuple,list)):
+#                     try:
+#                         return find_first_target(item,target_type)
+#                     except ValueError:
+#                         continue
+#                 else:
+#                     continue
+#     raise ValueError(f"Cannot find target_type {target_type}")
 
 #-------------------functions for deal with nested dict-------------------------#
 def _key_sort_func(key:str,order:tuple[str,...]|None):
@@ -340,7 +376,7 @@ def dict_flatten_reverse(key_value:list[tuple[str,Any]],buf_dict:dict=None,key_s
 #         if current_key is None:
 #             current_key = len(maybe_nested_dict.keys())
 #             if current_key==0:
-#                 logging.warning(f"`None` in key of `{tuple(list(previous_keys[:])+list(keys[:]))}` do not have any items.")
+#                 logging.getLogger(__name__).warning(f"`None` in key of `{tuple(list(previous_keys[:])+list(keys[:]))}` do not have any items.")
 #         for i,(key,value) in enumerate(maybe_nested_dict.items()):
 #             if i+1 > current_key:
 #                 break

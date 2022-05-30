@@ -1,0 +1,66 @@
+version: 1
+helper:
+    filePrefixChars: '%' # used to replace 
+    filePattern: r'(?P<prefix_holder>%+)(?P<log_file_name>[\\/\w]*\.\w*)'
+    fileReplPattern: r'{}/\g<log_file_name>'
+    fileHandelerConfigs: &fileHandelerBasicConfigs
+        class: logging.handlers.RotatingFileHandler
+        level: DEBUG
+        formatter: fileFormat
+        maxBytes: 1048576 # 1*1024*1024 B = 1 MB
+        backupCount: 3
+        encoding: 'utf-8'
+    consoleHanderConfigs: &consoleHanderBasicConfigs
+        class: logging.StreamHandler
+        level: INFO
+        formatter: streamFormat
+        stream: ext://sys.stdout
+formatters:
+    fileFormat:
+        format: "%(asctime)s.%(msecs)03d:%(name)s:%(levelname)s: %(message)s"
+        datefmt: "%Y-%m-%d %I:%M:%S"
+    streamFormat:
+        format: "%(name)s:%(levelname)s: %(message)s"
+        datefmt: "%Y-%m-%d %I:%M:%S"
+        
+handlers:
+    buildingFileHandeler:
+        filename: '%logs/building/building_log.log'
+        <<: *fileHandelerBasicConfigs
+    trainingFileHandeler:
+        filename: '%logs/training/training_log.log'
+        <<: *fileHandelerBasicConfigs
+    fileHandeler:
+        filename: 'untitled.log'
+        <<: *fileHandelerBasicConfigs
+    console:
+        <<: *consoleHanderBasicConfigs
+
+loggers:
+    implementations:
+        level: DEBUG
+        handlers: [fileHandeler,console]
+        propagate: yes
+    datasets:
+        level: DEBUG
+        handlers: [buildingFileHandeler,console]
+        propagate: yes
+    models:
+        level: DEBUG
+        handlers: [buildingFileHandeler,console]
+        propagate: yes
+    models._mri_trans_gan_model:
+        level: DEBUG
+        handlers: [trainingFileHandeler,console]
+        propagate: yes
+    training:
+        level: DEBUG
+        handlers: [buildingFileHandeler,console]
+        propagate: yes
+    utils:
+        level: DEBUG
+        handlers: [buildingFileHandeler,console]
+        propagate: yes
+# root: # do not influence root
+#     level: INFO
+#     handlers: [console]

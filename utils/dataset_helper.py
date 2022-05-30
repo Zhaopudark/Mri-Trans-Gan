@@ -1,24 +1,12 @@
 import os
-import numpy as np 
-from typeguard import typechecked 
-import nibabel as nib
-from typing import Callable,Iterable
-import math
-import random
 import logging
-import platform
-import re 
+from typeguard import typechecked 
+from typing import Callable,Iterable
+import random
 import functools
-@typechecked
-def path_norm(path:str):
-    if re.match(r'\.\.[\\\/]$',path) is None: # if not ../ ..\  then remove / or \
-        path = re.sub(r'[\\\/]$','',path)
-    if platform.system() == 'Linux':
-        return re.sub(r'[\\\/]',r"/",path)
-    elif platform.system() == 'Windows':
-        return re.sub(r'[\\\/]',r"\\",path)
-    else:
-        raise ValueError("System should be Linux or Windows.")
+
+import numpy as np 
+import nibabel as nib
 #--------------------------------------------------------------------------------#
 def _fmin_fmax(x1:np.ndarray|tuple[np.ndarray,np.ndarray],x2:np.ndarray):
     if isinstance(x1,np.ndarray):
@@ -199,7 +187,7 @@ def random_datas(datas:list|dict[str,list],random:random.Random|None=None):
                 random.shuffle(datas[key])
         else:
             random.shuffle(datas) # since datas has been shuffled, the next shuffle will not be the same
-        # logging.info(f"Random complete!,the first data is {datas[0]}")
+        logging.getLogger(__name__).info(f"Random complete!,the first data is {datas[0]}")
     return datas
 @typechecked
 def get_random_from_seed(seed:int|None=None):

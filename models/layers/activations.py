@@ -1,5 +1,6 @@
 import logging
 import tensorflow as tf 
+
 __all__ = [
     'activation_slect',
     # 'Dropout',
@@ -9,7 +10,7 @@ def activation_slect(activation_name):# 统一用tf.keras.activations内实现
     if activation_name == 'relu':
         return tf.keras.activations.relu
     elif activation_name == 'leaky_relu':
-        logging.warning("You have used leaky_relu! Remember give specific 'alpha' parameter to it!Default threshold is 0.")
+        logging.getLogger(__name__).warning("You have used leaky_relu! Remember give specific 'alpha' parameter to it!Default threshold is 0.")
         return tf.keras.activations.relu
     elif activation_name == 'gelu':
         return tf.keras.activations.gelu
@@ -21,10 +22,10 @@ def activation_slect(activation_name):# 统一用tf.keras.activations内实现
         return tf.keras.activations.linear
     elif activation_name == 'softmax':
         return tf.keras.activations.softmax    
-    elif activation_name == None:
+    elif activation_name is None:
         return tf.keras.activations.linear
     else:
-        raise ValueError("Unsupported activation: "+activation_name)
+        raise ValueError(f"Unsupported activation: {activation_name}")
 class Dropout(tf.keras.layers.Layer):
     """
     Dropout 本质  
@@ -55,13 +56,11 @@ class Dropout(tf.keras.layers.Layer):
         self.tmp_kwargs['seed'] = seed
     def build(self,input_shape):
         super(Dropout,self).build(input_shape)
-        output_shape = input_shape[:]
-        return output_shape
+        return input_shape[:]
     def call(self,x,training):
         if not training:
             self.tmp_kwargs['rate'] = 0
-        y = tf.nn.dropout(x,**self.tmp_kwargs)
-        return y
+        return tf.nn.dropout(x,**self.tmp_kwargs)
 
 class Activation(tf.keras.layers.Layer):
     def __init__(self,activation_name,name=None,dtype=None,**kwargs):
@@ -107,8 +106,7 @@ class Activation(tf.keras.layers.Layer):
                 call = activation_slect(activation_name)#摒弃原call函数 因为一定需要被重载
                 _special_flag=True
                 def activation_call(x,training):
-                    y = scale*call(x,**tmp_kwargs)+offset
-                    return y
+                    return scale*call(x,**tmp_kwargs)+offset
             else:
                 tmp_kwargs ={}
             if _special_flag:
@@ -116,14 +114,12 @@ class Activation(tf.keras.layers.Layer):
             else:
                 call = activation_slect(activation_name)#摒弃原call函数 因为一定需要被重载
                 def activation_call(x,training):
-                    y = call(x,**tmp_kwargs)
-                    return y
+                    return call(x,**tmp_kwargs)
             return activation_call
         self.call = _activation_wrapper(self.activation_name,**kwargs)
     def build(self,input_shape):
         super(Activation,self).build(input_shape)
-        output_shape = input_shape[:]
-        return output_shape
+        return input_shape[:]
     def call(self,x,training):
         raise ValueError("Activation call func need to be override again.")
 

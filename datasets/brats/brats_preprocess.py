@@ -1,16 +1,13 @@
-import os 
-import sys
-import platform
 import logging
+import platform
 from typing import Callable
 from typeguard import typechecked
 from subprocess import check_output
 import functools
 import numpy as np
-import nibabel as nib
-from alive_progress import alive_bar
 from datasets.brats.brats_data import BraTSDataPathCollection,is_affine_euqal,is_header_euqal
 from utils.dataset_helper import np_zero_close,read_nii_file,save_nii_file,norm_min_max,norm_z_score,np_min_max_on_sequence
+from utils.bar_helper import func_bar_injector
 
 class PreProcess():
     @typechecked
@@ -39,7 +36,7 @@ class PreProcess():
                 assert k1==k2 
                 reg_cmd = f"bet {input_path} {output_path} -m -R -f 0.05"
                 reg_info = check_output(reg_cmd,shell=True).decode()
-                print(reg_cmd)
+                logging.getLogger(__name__).info(reg_cmd)
     @typechecked
     def norm_with_masks(self,foreground_offset:int|float,norm_method:str):
         input_datas = self.data_path_collection.get_individual_datas('main',['mask'])
@@ -50,7 +47,8 @@ class PreProcess():
             norm_func = norm_min_max
             use_global_min_max = False 
         elif norm_method == 'z_score_norm':
-            logging.warning(f"z_score 不仅将有效区域进行标准化~N({foreground_offset},1.0) 也将背景归0 有可能会影响模型性能")
+            
+            logging.getLogger(__name__).warning(f"z_score 不仅将有效区域进行标准化~N({foreground_offset},1.0) 也将背景归0 有可能会影响模型性能")
             norm_func = norm_z_score
             use_global_min_max = False 
         elif norm_method == 'z_score_and_min_max_norm':
@@ -62,18 +60,19 @@ class PreProcess():
         output_datas = self.data_path_collection.get_individual_datas(norm_method,['mask'])
 
         if use_global_min_max:
-            with alive_bar(ctrl_c=False, title='Computing global min_max:') as bar:  
-                def _wrapper(func): #bar: draw progress bar 
-                    @functools.wraps(func)
-                    def wrappered(x1,x2):
-                        if isinstance(x1,str):
-                            x1,_,_ = read_nii_file(x1)
-                        x2,_,_ = read_nii_file(x2)
+            @func_bar_injector
+            def _wrapper(func,bar:Callable=None): #bar: draw progress bar 
+                @functools.wraps(func)
+                def wrappered(x1,x2):
+                    if isinstance(x1,str):
+                        x1,_,_ = read_nii_file(x1)
+                    x2,_,_ = read_nii_file(x2)
+                    if bar is not None:
                         bar()
-                        return func(x1,x2)
-                    return wrappered
-                reduce_min_max = functools.partial(np_min_max_on_sequence,ignore_nan=True,wrapper=_wrapper)
-                global_min_maxs = BraTSDataPathCollection.reduce_datas(input_datas,reduce_func=reduce_min_max)
+                    return func(x1,x2)
+                return wrappered
+            reduce_min_max = functools.partial(np_min_max_on_sequence,ignore_nan=True,wrapper=_wrapper)
+            global_min_maxs = BraTSDataPathCollection.reduce_datas(input_datas,reduce_func=reduce_min_max)
         else:
             def reduce_min_max(_): #bar: draw progress bar 
                 return None
@@ -95,7 +94,7 @@ class PreProcess():
                 mask,_,_ = read_nii_file(mask_path,dtype=np.int16)
                 norm_out = norm_func(x=img,mask=mask,global_min_max=global_min_max,foreground_offset=foreground_offset)
                 save_nii_file(norm_out,output_path,affine=affine,header=header)
-                print(output_path)
+                logging.getLogger(__name__).info(output_path)
 
 
     def combine_masks(self):
@@ -119,7 +118,7 @@ class PreProcess():
                 return np_zero_close(x_img*y_img),x_affine,x_header
             mask,affine,header = functools.reduce(combine_mask_infos,input_paths)
             save_nii_file(mask,output_path,affine=affine,header=header)
-            print(output_path)
+            logging.getLogger(__name__).info(output_path)
                 
     @typechecked
     def del_files(self,keys:str):
@@ -133,9 +132,9 @@ class PreProcess():
             for path in data.datas.values():
                 try:
                     # os.remove(path)
-                    print(f"remove {path}")
+                    logging.getLogger(__name__).info(f"remove {path}")
                 except FileNotFoundError:
-                    print(f"{path} does not exist! Ignored")   
+                    logging.getLogger(__name__).info(f"{path} does not exist! Ignored")   
     
   
 if __name__=='__main__':
@@ -154,7 +153,7 @@ if __name__=='__main__':
     # preprocess.del_files('z_score_and_min_max_norm')
     # preprocess.del_files('individual_min_max_norm')
     preprocess.norm_with_masks(foreground_offset=0.001,norm_method='individual_min_max_norm')
-    preprocess.norm_with_masks(foreground_offset=0.001,norm_method='min_max_norm')
-    preprocess.norm_with_masks(foreground_offset=0.0,norm_method='z_score_norm')
-    preprocess.norm_with_masks(foreground_offset=0.001,norm_method='z_score_and_min_max_norm')
+    # preprocess.norm_with_masks(foreground_offset=0.001,norm_method='min_max_norm')
+    # preprocess.norm_with_masks(foreground_offset=0.0,norm_method='z_score_norm')
+    # preprocess.norm_with_masks(foreground_offset=0.001,norm_method='z_score_and_min_max_norm')
     

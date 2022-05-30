@@ -10,7 +10,7 @@ import numpy as np
 import tensorflow as tf 
 import logging
 import copy
-from utils.dataset_helper import read_nii_file,data_dividing,get_random_from_seed,path_norm
+from utils.dataset_helper import read_nii_file,data_dividing,get_random_from_seed,norm_path
 from utils.image.patch_process import index_cal
 from datasets.brats.brats_data import BraTSDataPathCollection
 from datasets.brats.brats_data import BraTSBase
@@ -46,13 +46,13 @@ class TFRecordManager():
     """
     @typechecked
     def __init__(self,path:str="./",) -> None:
-        self.path = path_norm(path)
+        self.path = norm_path(path)
         if not os.path.exists(self.path):
             os.mkdir(self.path)
         assert os.path.isdir(self.path)
     def _get_target_path(self,name:str):
         # since typecheck may slow down, use the __wrapped__ one
-        return path_norm(f"{self.path}\\{name}.tfrecords") 
+        return norm_path(f"{self.path}\\{name}.tfrecords") 
     def _bytes_feature(self,value):
         """Returns a bytes_list from a string / byte."""
         if isinstance(value, type(tf.constant(0))):

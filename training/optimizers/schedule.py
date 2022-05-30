@@ -92,6 +92,5 @@ if __name__ == '__main__':
     for item1,item2 in zip(buf1,buf2):
         _sum += tf.reduce_sum(item1-item2)
     print(_sum)
-    print('$1')
     print("测试schedule是否可以落实 如果sum=0 表示带有schedule的optimizers可以顺利保存内部的step(即iteration)并在下次求导时正确应用schedule",_sum)
     

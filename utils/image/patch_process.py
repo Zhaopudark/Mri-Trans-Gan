@@ -1,19 +1,15 @@
-import os 
-import sys
-import logging
 import math
-import tensorflow as tf
+import logging
 import random
-import tensorflow.experimental.numpy as tnp
-import functools
 import itertools
 import numpy as np
-from typeguard import typechecked 
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(base, '../'))
+from typeguard import typechecked
+
+import tensorflow as tf
 __all__ = [
     'PacthesProcesser',
 ]
+
 @typechecked
 def index_cal(valid_range:tuple[int,int],sub_seq_len:int,sub_seq_num:int):
     """计算
@@ -41,7 +37,7 @@ def index_cal(valid_range:tuple[int,int],sub_seq_len:int,sub_seq_num:int):
         if sub_seq_num*sub_seq_len < valid_len:
             old_sub_seq_num = sub_seq_num
             sub_seq_num = math.ceil(valid_len/sub_seq_len)
-            logging.warning(f"sub_seq_num has been changed from {old_sub_seq_num} to {sub_seq_num}.")
+            logging.getLogger(__name__).warning(f"sub_seq_num has been changed from {old_sub_seq_num} to {sub_seq_num}.")
     index_range_buf = []
     mid_index = math.ceil((start_index+end_index)/2)
     left_index = mid_index-sub_seq_len//2 # 中心区间的左下标
@@ -101,7 +97,7 @@ class PacthesProcesser():
                 if sub_seq_num*sub_seq_len < valid_len:
                     old_sub_seq_num = sub_seq_num
                     sub_seq_num = math.ceil(valid_len/sub_seq_len)
-                    logging.warning(f"sub_seq_num has been changed from {old_sub_seq_num} to {sub_seq_num}.")
+                    logging.getLogger(__name__).warning(f"sub_seq_num has been changed from {old_sub_seq_num} to {sub_seq_num}.")
                 else:
                     pass
         index_range_buf = []
@@ -352,6 +348,7 @@ def _my_slice(img,patch_index_lists):
     return img_list
 
 if __name__=='__main__':
+    import tensorflow.experimental.numpy as tnp
     p = PacthesProcesser()
     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
     tf.config.experimental.set_memory_growth(physical_devices[0], True)

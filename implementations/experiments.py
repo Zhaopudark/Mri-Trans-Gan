@@ -173,8 +173,8 @@ parser_recoder('D_learning_rate',
 optm_group = parser.add_argument_group('optimizer')
 parser_recoder('optimizer_name',
     optm_group.add_argument("--optimizer_name",type=str.lower,default='adam'))
-parser_recoder('optimizer_random_seed',
-    optm_group.add_argument("--optimizer_random_seed",type=int,help='$1'))
+# parser_recoder('optimizer_random_seed',
+    # optm_group.add_argument("--optimizer_random_seed",type=int,help='$1'))
 parser_recoder('adam_beta_1',
     optm_group.add_argument("--adam_beta_1",type=float,default=0.0))
 parser_recoder('adam_beta_2',
@@ -283,6 +283,7 @@ tf.keras.utils.set_random_seed(args.global_random_seed)
 tf.config.experimental.enable_op_determinism()
 tf.keras.utils.set_random_seed(args.global_random_seed)
 model = model_selector.model(args=args)
+tf.keras.utils.set_random_seed(args.global_random_seed)
 model.build()
 if args.action == 'train':
     model.train()

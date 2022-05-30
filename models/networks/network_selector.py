@@ -5,7 +5,7 @@ __all__ = [
 class NetworkSelector():
     def __init__(self,args):
         self._architectures = {}
-        _architecture_name = args.architecture_name.lower()
+        _architecture_name = args['architecture_name'].lower()
         if _architecture_name == 'mri_trans_gan':
             self._architectures['generator'] = mri_trans_gan.Generator
             self._architectures['discriminator'] = mri_trans_gan.Discriminator

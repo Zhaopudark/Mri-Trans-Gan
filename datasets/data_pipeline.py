@@ -12,12 +12,13 @@ from typeguard import typechecked
 from typing import Callable
 from datasets.brats.brats_pipeline import BraTSBasePipeLine,BraTSDividingWrapper,BraTSPatchesWrapper
 class DataPipeline():
-    def __init__(self,args,counters) -> None:
+    @typechecked
+    def __init__(self,args:dict,counters:dict) -> None:
         """
         arg: hyperparameters 
 
         """
-        if args.dataset.lower() == 'brats':
+        if args['dataset'].lower() == 'brats':
             """
                 In BraTS dataset, if we directly 
                 read a ".nii" file and transform it to numpy array,
@@ -50,17 +51,17 @@ class DataPipeline():
                 record_path="D:\\Datasets\\BraTS\\BraTS2021_new\\records",
                 axes_format=('vertical','sagittal','coronal'),
                 axes_direction_format=("S:I","A:P","R:L"),
-                norm_method=args.norm,
+                norm_method=args['norm'],
                 counters=counters,
-                seed=args.data_random_seed,
+                seed=args['data_random_seed'],
                 )
-            d1 = BraTSDividingWrapper(d,dividing_rates=tuple(args.data_dividing_rates),dividing_seed=args.data_dividing_seed)
+            d1 = BraTSDividingWrapper(d,dividing_rates=tuple(args['data_dividing_rates']),dividing_seed=args['data_dividing_seed'])
             self.data_pipeline = BraTSPatchesWrapper(d1,
-                cut_ranges=tuple(args.cut_ranges),
-                patch_sizes=tuple(args.patch_sizes),
-                patch_nums=tuple(args.patch_nums),)
+                cut_ranges=args['cut_ranges'],
+                patch_sizes=args['patch_sizes'],
+                patch_nums=args['patch_nums'],)
             # t1(patch),t2(patch),t1ce(patch),flair(patch),mask(patch),m(patch mask),v(patch padding vector)            
-        elif args.dataset.lower() == 'ixi':
+        elif args['dataset'].lower() == 'ixi':
             # DataPipeLine = IXIDataPipeLine
             # train_path = "G:\\Datasets\\IXI\\Registration_train"
             # test_path = "G:\\Datasets\\IXI\\Registration_test"
@@ -68,8 +69,8 @@ class DataPipeline():
             # validation_path = "G:\\Datasets\\IXI\\Registration_validate"
             pass
         else:
-            raise ValueError(f"Unsupported dataset {args.dataset}")
-        self.batch_size = args.batch_size
+            raise ValueError(f"Unsupported dataset {args['dataset']}")
+        self.batch_size = args['batch_size']
     def map_func(self,inputs:dict[str:tf.Tensor]):
         return {key:value[...,tf.newaxis] for key,value in inputs.items()}  
     # @staticmethod
@@ -88,21 +89,18 @@ if __name__ == '__main__':
     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
     import tempfile
-    class aaacc():
-        def __init__(self) -> None:
-            pass
-    args = aaacc()
-    args.dataset= 'braTS'
-    args.norm='individual_min_max_norm'
-    args.cut_ranges=[(155//2-8,155//2+7),(0,239),(0,239)]
-    args.data_dividing_rates = (0.7,0.25,0.05)
-    args.data_dividing_seed= 1200
-    args.patch_sizes=[16,128,128]
-    args.patch_nums=[1,3,3]
-    args.batch_size =1
-    args.data_random_seed = 1200
-    args.global_random_seed = 1200
-    args.domain = [0.0,255.0]
+    args = {}
+    args['dataset']= 'braTS'
+    args['norm']='individual_min_max_norm'
+    args['cut_ranges']=((155//2-8,155//2+7),(0,239),(0,239))
+    args['data_dividing_rates'] = (0.7,0.25,0.05)
+    args['data_dividing_seed']= 1200
+    args['patch_sizes']=(16,128,128)
+    args['patch_nums']=(1,3,3)
+    args['batch_size'] =1
+    args['data_random_seed'] = 1200
+    args['global_random_seed'] = 1200
+    args['domain'] = (0.0,255.0)
     step1 = tf.Variable(0)
     epoch1 = tf.Variable(0)
     counters1 = {'step':step1,'epoch':epoch1}
@@ -115,50 +113,55 @@ if __name__ == '__main__':
     start = time.perf_counter() 
 
 
-    # tf.keras.utils.set_random_seed(args.global_random_seed)
-    # tf.config.experimental.enable_op_determinism()
-    # tf.keras.utils.set_random_seed(args.global_random_seed)
+    tf.keras.utils.set_random_seed(args['global_random_seed'])
+    tf.config.experimental.enable_op_determinism()
+    tf.keras.utils.set_random_seed(args['global_random_seed'])
     train_set,test_set,validation_set = pipe_line()
     train_set_2,test_set_2,validation_set_2 = pipe_line_2()
+    # train_set = tf.data.Dataset.range(10).map(lambda x:x).batch(2)
+    # print(type(train_set))
+    # print(train_set.cardinality())
+    # print(train_set.cardinality())
+    print(len(train_set))
+    # with tempfile.TemporaryDirectory() as dir_name:
+    #     step = counters1['step']
+    #     epoch = counters1['epoch']
+        
+        # checkpoint = tf.train.Checkpoint(counters=counters1)
+        # ckpt_manager = tf.train.CheckpointManager(checkpoint=checkpoint,directory=dir_name,max_to_keep=3,step_counter=step,checkpoint_interval=10)
+        # buf1 = []
+        # for s,datas in zip(range(step.numpy()+1,25+1),train_set):
+        #     step.assign(s)
+        #     buf1.append((s,tf.reduce_mean(datas['t1']).numpy()))
+        #     ckpt_manager.save(check_interval=True,checkpoint_number=s)
+        #     if s>=13:
+        #         break
+        # ckpt_manager.restore_or_initialize()
+        # for s,datas in zip(range(step.numpy()+1,25+1),train_set):
+        #     step.assign(s)
+        #     buf1.append((s,tf.reduce_mean(datas['t1']).numpy()))
+        #     ckpt_manager.save(check_interval=True,checkpoint_number=s)
+    # with tempfile.TemporaryDirectory() as dir_name:
+    #     step = counters2['step']
+    #     epoch = counters2['epoch']
+    #     checkpoint = tf.train.Checkpoint(counters=counters2)
+    #     ckpt_manager = tf.train.CheckpointManager(checkpoint=checkpoint,directory=dir_name,max_to_keep=3,step_counter=step,checkpoint_interval=10)
+    #     buf2 = []
+    #     for s,datas in zip(range(step.numpy()+1,25+1),train_set_2):
+    #         step.assign(s)
+    #         buf2.append((s,tf.reduce_mean(datas['t1']).numpy()))
+    #         ckpt_manager.save(check_interval=True,checkpoint_number=s)
+    #         if s>=13:
+    #             break
+    #     ckpt_manager.restore_or_initialize()
+    #     for s,datas in zip(range(step.numpy()+1,25+1),train_set_2):
+    #         step.assign(s)
+    #         buf2.append((s,tf.reduce_mean(datas['t1']).numpy()))
+    #         ckpt_manager.save(check_interval=True,checkpoint_number=s)
 
-    with tempfile.TemporaryDirectory() as dir_name:
-        step = counters1['step']
-        epoch = counters1['epoch']
-        checkpoint = tf.train.Checkpoint(counters=counters1)
-        ckpt_manager = tf.train.CheckpointManager(checkpoint=checkpoint,directory=dir_name,max_to_keep=3,step_counter=step,checkpoint_interval=10)
-        buf1 = []
-        for s,datas in zip(range(step.numpy()+1,25+1),train_set):
-            step.assign(s)
-            buf1.append((s,tf.reduce_mean(datas['t1']).numpy()))
-            ckpt_manager.save(check_interval=True,checkpoint_number=s)
-            if s>=13:
-                break
-        ckpt_manager.restore_or_initialize()
-        for s,datas in zip(range(step.numpy()+1,25+1),train_set):
-            step.assign(s)
-            buf1.append((s,tf.reduce_mean(datas['t1']).numpy()))
-            ckpt_manager.save(check_interval=True,checkpoint_number=s)
-    with tempfile.TemporaryDirectory() as dir_name:
-        step = counters2['step']
-        epoch = counters2['epoch']
-        checkpoint = tf.train.Checkpoint(counters=counters2)
-        ckpt_manager = tf.train.CheckpointManager(checkpoint=checkpoint,directory=dir_name,max_to_keep=3,step_counter=step,checkpoint_interval=10)
-        buf2 = []
-        for s,datas in zip(range(step.numpy()+1,25+1),train_set_2):
-            step.assign(s)
-            buf2.append((s,tf.reduce_mean(datas['t1']).numpy()))
-            ckpt_manager.save(check_interval=True,checkpoint_number=s)
-            if s>=13:
-                break
-        ckpt_manager.restore_or_initialize()
-        for s,datas in zip(range(step.numpy()+1,25+1),train_set_2):
-            step.assign(s)
-            buf2.append((s,tf.reduce_mean(datas['t1']).numpy()))
-            ckpt_manager.save(check_interval=True,checkpoint_number=s)
 
-
-    for item1,item2 in zip(buf1,buf2):
-        print(item1,item2)
+    # for item1,item2 in zip(buf1,buf2):
+    #     print(item1,item2)
 
 
 
