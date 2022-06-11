@@ -8,10 +8,6 @@ import logging.config
 from typeguard import typechecked
 
 
-class MyLogging(logging.getLoggerClass()):
-    ...
-    
-
 @typechecked
 def set_global_loggers(config_path:str='logging_config.yaml',target_prefix:str='.'):
     config_path = os.path.abspath(config_path)

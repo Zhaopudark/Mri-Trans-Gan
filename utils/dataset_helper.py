@@ -1,12 +1,116 @@
 import os
 import logging
 from typeguard import typechecked 
-from typing import Callable,Iterable
+from typing import Callable,Iterable,Any,Literal,Sequence
 import random
 import functools
+import copy
+import itertools
+import operator
+import nibabel as nib
 
 import numpy as np 
-import nibabel as nib
+import tensorflow as tf
+
+
+class DataIter():
+    """
+    return an datas Iterator that 
+        can control random behavior with an inner and individual random.Random() instance
+        can iter form the latest counters (step epoch) 
+    Args:
+        datas: list of data that can be 'shuffle()' by random.Random()
+        counters: {"step":step,"epoch":epoch}, contain the quote of global step and epoch
+        seed: random seed, `None` means do not random
+    Method:
+        __iter__(): 
+            It will backtrack status from the original dataset by counters before delivering elements.
+            Since random.Random().shuffle() will change status after each application, 
+            we should backtrack status from scratch everytime.
+    """
+    @typechecked
+    def __init__(self,datas:list,counters:dict[Literal["step","epoch"],tf.Variable]|None=None,seed:int|None=None) -> None:
+        if counters is None:
+            counters = {"step":0,"epoch":0}
+        self._epoch = counters["epoch"] # have passed epoch
+        self._step = counters["step"] # have passed step
+        self.datas = copy.deepcopy(datas) # do not influence original data, fixing the data
+        self.seed = seed
+        self._check()
+    def _check(self):
+        assert (self.step//self.length)==self.epoch
+    @property
+    def length(self):
+        return len(self.datas)
+    @property
+    def epoch(self):
+        return self._epoch.numpy() if hasattr(self._epoch,"numpy") else self._epoch
+    @property
+    def step(self):
+        return self._step.numpy() if hasattr(self._step,"numpy") else self._step
+    def __iter__(self):
+        datas = copy.deepcopy(self.datas) # do not influence the fixed data
+        random = get_random_from_seed(self.seed) 
+        for _ in range(self.epoch): # random from scratch
+            datas = random_datas(datas,random)
+        # self.step%self.length do not need 'minus 1', because it is the start index exactly
+        return itertools.islice(datas,self.step%self.length,self.length) 
+    def __repr__(self) -> str:
+        return f"Static indices is epoch:{self.epoch} step:{self.step}."
+
+
+
+class RecordManager():
+    """
+    This class manager the record files. We can get our expected datas from specific files by `load()`.
+
+    Managing datasets by saving and loading tf-record files has been deprecated for the following reasons:
+        1. tf-record files is hard to read and save:
+            Need use `tf.train.Feature`, `tf.train.Features`, `tf.io.TFRecordWriter` for loading
+                and use `tf.data.TFRecordDataset`,`tf.io.FixedLenFeature` and `tf.io.parse_single_example` for reading.
+            In additional, if save and load non-scalar tensors, should use `tf.io.serialize_tensor` to transfer it to bytes and `tf.io.parse_tensor` to get original tensor
+        2. tf-record's saving behavior only works in Eager Mode, i.e., can not used in tf.data.Dataset.map() unless wrappered by tf.py_function 
+        3. `tf.io.TFRecordDataset` will load all files in memory when shuffle() is used, i.e.,  the mapping of inner segments within `tf.io.TFRecordDataset` is not implemented.
+    So, here, we build a new RecordManager with the following keys:
+        1. Make a mapping from specific files to file stamps(names)
+        2. In disk or remote device, each specific file can be saved separately or in groups, depending on the pressure and flux requirements of the data pipeline.
+        3. When the corresponding specific file of a file stamp does not exist, generate and save the file before return.
+        4. Use memory and storage consumption as less as possible.
+    `numpy`'s NPZ file can provide us with solutions for the above keys.
+
+    Args:
+        path: the record file's saved and loaded path
+    Methods:
+        load:
+            load(name:str,structure:dict[str,Any],gen_func:Callable[[],dict[str,np.ndarray]])
+            this method works on a group of specific files(ndarrays), that saved in a NPZ file (determined by `name`)
+            `structure`'s keys() determines what files(ndarrays) in the saved NPZ file will return.
+            For greater compatibility, i.g., it is more convenient to process sequence in posterior procedures, here we just return sequence of ndarray instead of a dict in the same sturcture with `structure`.
+
+    """
+    @typechecked
+    def __init__(self,path:str="./",) -> None:
+        self.path = os.path.normpath(path)
+        if not os.path.exists(self.path):
+            os.mkdir(self.path)
+        assert os.path.isdir(self.path)
+    def _get_target_path(self,name:str):
+        return os.path.normpath(f"{self.path}\\{name}.npz") 
+    def load(self,name:str,structure:dict[str,Any],gen_func:Callable[[],dict[str,np.ndarray]])->Sequence[np.ndarray]:
+        keys = structure.keys()
+        files_getter = operator.itemgetter(*keys)
+        try:
+            saved_file = np.load(self._get_target_path(name))
+            output = files_getter(saved_file)
+        except KeyError:
+            saved_file = dict(**saved_file) | gen_func()
+            np.savez_compressed(self._get_target_path(name),**saved_file)
+            output = files_getter(saved_file)
+        except FileNotFoundError:
+            saved_file = gen_func()
+            np.savez_compressed(self._get_target_path(name),**saved_file)
+            output = files_getter(saved_file)
+        return output
 #--------------------------------------------------------------------------------#
 def _fmin_fmax(x1:np.ndarray|tuple[np.ndarray,np.ndarray],x2:np.ndarray):
     if isinstance(x1,np.ndarray):

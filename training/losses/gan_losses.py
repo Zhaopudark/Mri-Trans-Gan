@@ -122,8 +122,8 @@ class _WGanGpLoss():
         D_loss = -tf.reduce_mean(D_real)+tf.reduce_mean(D_fake)+tf.reduce_mean(penalty) #用batch 均值逼近期望 然后依据公式 max  所以取反  -E(real)+E(fake)  做min
         # logging.getLogger(__name__).info("not cliping")
 
-        D_loss = tf.clip_by_value(D_loss,-10.,+10.)
-        logging.getLogger(__name__).info("cliping")
+        # D_loss = tf.clip_by_value(D_loss,-10.,+10.)
+        # logging.getLogger(__name__).info("cliping")
         # print("cliping")
         return D_loss
     def generator_loss(self,D_real,D_fake,**kwargs):

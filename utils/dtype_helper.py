@@ -1,12 +1,12 @@
 
-import os
-import re 
 import ast
+import copy
 import itertools
 import functools
-import platform
-from typing import Callable,Iterable,Any
+import collections
+from typing import Callable,Iterable,Any, Mapping
 from typeguard import typechecked
+
 
 @typechecked
 def flatten(items:Iterable):
@@ -45,9 +45,15 @@ def norm_tuple(tuple_like:Any,depth:int=0):
             return tuple([norm_tuple(item,d+1) for item in x])
         case x:
             raise ValueError(f"{x} in unexpected type:{type(x)}.")
+
 @typechecked
-def get_tuple_from_string(x:str)->tuple:
-    return norm_tuple(ast.literal_eval(x))
+def get_tuple_from_str(x:str)->tuple:
+    try:
+        value = ast.literal_eval(x)
+        return norm_tuple(value)
+    except ValueError:
+        return norm_tuple(x)
+
 
 @typechecked
 def reduce_with_map(reduce_func:Callable,inputs:Iterable[Any],map_func:Callable[[Any],Any]=None):
@@ -66,37 +72,9 @@ def reduce_same(inputs:Iterable[Any],map_func:Callable[[Any],Any]=None):
         return x1 
     return reduce_with_map(_check,inputs,map_func=map_func)
     
-# @typechecked
-# def find_first_target(maybe_iterable,target_type:type=str):
-#     if isinstance(maybe_iterable,target_type):
-#         return maybe_iterable
-#     elif isinstance(maybe_iterable,Iterable):
-#         if isinstance(maybe_iterable,dict):
-#             for k,v in maybe_iterable.items():
-#                 if isinstance(v,target_type):
-#                     return v
-#                 elif isinstance(v,(dict,set,tuple,list)):
-#                     try:
-#                         return find_first_target(v,target_type)
-#                     except ValueError:
-#                         continue
-#                 else:
-#                     continue
-#         else:
-#             for item in maybe_iterable:
-#                 if isinstance(item,target_type):
-#                     return item
-#                 elif isinstance(item,(dict,set,tuple,list)):
-#                     try:
-#                         return find_first_target(item,target_type)
-#                     except ValueError:
-#                         continue
-#                 else:
-#                     continue
-#     raise ValueError(f"Cannot find target_type {target_type}")
 
 #-------------------functions for deal with nested dict-------------------------#
-def _key_sort_func(key:str,order:tuple[str,...]|None):
+def key_sort_func(key:str,order:tuple[str,...]|None):
     """
     key sort function 
     mostly used when sort a dict by key
@@ -119,8 +97,8 @@ def _key_sort_func(key:str,order:tuple[str,...]|None):
     else:
         return chr(len(order))+key
 
-@typechecked
-def nested_dict_key_sort(maybe_nested_dict:dict,key_orders:Iterable[tuple[str,...]|None],bar:Callable=None)->dict:
+# @typechecked
+def nested_dict_key_sort(maybe_nested_dict:dict,key_orders:Iterable[tuple[str,...]|None])->dict:
     """
     sort a maybe_nested_dict level by level with corresponding key order
     Args:
@@ -156,18 +134,16 @@ def nested_dict_key_sort(maybe_nested_dict:dict,key_orders:Iterable[tuple[str,..
         key_orders = iter((None,))
         current_order = next(key_orders)
     
-    maybe_nested_dict = dict(sorted(maybe_nested_dict.items(),key=lambda kv:_key_sort_func(kv[0],current_order)))
-    if bar is not None:
-        bar()
+    maybe_nested_dict = dict(sorted(maybe_nested_dict.items(),key=lambda kv:key_sort_func(kv[0],current_order)))
     for (key,value),tee_key_orders in zip(
         maybe_nested_dict.items(),
         itertools.tee(key_orders,len(maybe_nested_dict.keys()))):
         if isinstance(value,dict):
-            maybe_nested_dict[key] = nested_dict_key_sort(value,tee_key_orders,bar)
+            maybe_nested_dict[key] = nested_dict_key_sort(value,tee_key_orders)
     return maybe_nested_dict
 
 
-@typechecked
+# @typechecked
 def check_nested_dict(maybe_nested_dict:dict,
                       keys:tuple[None|int|str|tuple[str,...],...],
                       previous_keys:list[str]|list=None,
@@ -249,7 +225,7 @@ def check_nested_dict(maybe_nested_dict:dict,
                 check_nested_dict(maybe_nested_dict,tmp_key,previous_keys[:],value_func,bar)
 
 
-@typechecked
+# @typechecked
 def gen_key_value_from_nested_dict(
         maybe_nested_dict:dict,
         keys:tuple[None|int|str|tuple[str,...],...],
@@ -349,43 +325,216 @@ def dict_flatten_reverse(key_value:list[tuple[str,Any]],buf_dict:dict=None,key_s
         keys = tuple(key.split(key_separator))
         _nested_dict_k_v_assign(maybe_nested_dict=buf_dict,keys=keys,value=value)
     return buf_dict
-# @typechecked
-# def gen_values_from_nested_dict(maybe_nested_dict:dict,keys:tuple[None|int|str|tuple[str,...],...],previous_keys:list[str]|list=None,value_func:Callable=None):
-#     # return any number of values of a n-level-nested dict by keys, as long as the value's key are met
-#     # when store, keys should be str
-#     # when reading, key can be None(all keys in this level are met) or int(first n keys in this level are met)
-#     # if key not in dict, new sub dict will be added and the final value will be generated by value_func
-#     current_key = keys[0]
-#     if previous_keys is None:
-#         previous_keys = []
-#     if isinstance(current_key,str):
-#         if current_key in maybe_nested_dict:
-#             if len(keys)>1:
-#                 next_keys = keys[1:]
-#                 yield from gen_values_from_nested_dict(maybe_nested_dict[current_key],next_keys,previous_keys[:]+[current_key],value_func)
-#             else:
-#                 yield maybe_nested_dict[current_key]
-#         elif len(keys)>1:
-#                 next_keys = keys[1:]
-#                 maybe_nested_dict[current_key] = {}
-#                 yield from gen_values_from_nested_dict(maybe_nested_dict[current_key],next_keys,previous_keys[:]+[current_key],value_func)
-#         else:       
-#             maybe_nested_dict[current_key] = value_func(previous_keys[:]+[current_key])
-#             yield maybe_nested_dict[current_key]
-#     elif isinstance(current_key,int) or current_key is None:
-#         if current_key is None:
-#             current_key = len(maybe_nested_dict.keys())
-#             if current_key==0:
-#                 logging.getLogger(__name__).warning(f"`None` in key of `{tuple(list(previous_keys[:])+list(keys[:]))}` do not have any items.")
-#         for i,(key,value) in enumerate(maybe_nested_dict.items()):
-#             if i+1 > current_key:
-#                 break
-#             if len(keys)>1:
-#                 next_keys = keys[1:]
-#                 yield from gen_values_from_nested_dict(value,next_keys,previous_keys[:]+[key],value_func)
-#             else:
-#                 yield maybe_nested_dict[key]
-#     else:
-#         for key in current_key: # manually product
-#             tmp_key = tuple([key]+list(keys[1:])) if len(keys)>1 else (key,)
-#             yield from gen_values_from_nested_dict(maybe_nested_dict,tmp_key,previous_keys[:],value_func)
+
+#--------------------------------------------------------------------------------------------------------------#
+class ListContainer(collections.UserList):
+    def __init__(self,data) -> None:
+        if isinstance(data,ListContainer):
+            super().__init__(data.data)
+        elif isinstance(data,list): # 可能用户本就希望存储该列表 为了保持其完整性 打包成元组后存储
+            super().__init__(data)
+        else:
+            super().__init__([data])
+    def get_norm(self): # return a copy for safety
+        # return most original data (non-user-defined) type (str,dict,list...)
+        return self.data[:]
+    def serialize(self): # return a copy for safety
+        # return each serialized type of  element in self.data (which can be eval() to original type)
+        # return [f"\'{item}\'" for item in self.data]
+        buf = []
+        for item in self.data:
+            if isinstance(item,str):
+                buf.append(f"\'{item}\'")
+            else:
+                buf.append(f"{item}")
+        return buf
+ 
+
+#--------------------------------------------------------------------------------------------------------------#
+class DictList(collections.UserDict):
+    def __init__(self,initial_data) -> None:
+        if isinstance(initial_data,DictList):
+            self.data = initial_data.data
+        elif isinstance(initial_data,dict):
+            self.data = initial_data
+            for key in self.data:
+                self.data[key] = ListContainer(self.data[key])
+        else:
+            raise ValueError(" ")
+    @staticmethod
+    def __reduce_out_place(dict1:dict,dict2:dict): # not in-place
+        return {key:dict1[key]+dict2[key] for key in dict2 if key in dict1}
+    @staticmethod
+    def __broadcast_out_place(data:dict,info): # not in-place
+        buf = {}
+        for key in data:
+            assert len(data[key].data)==1
+            buf[key] = ListContainer((data[key].data[0],info))
+        return buf
+        # return {key:data[key]+ListContainer(info) for key in data}
+    def __add__(self,other): # should not be in-place
+        if isinstance(other,self.__class__):
+            return self.__class__(self.__reduce_out_place(self.data,other.data))
+        else:
+            return self.__class__(self.__broadcast_out_place(self.data,other))
+    def __radd__(self, other):
+        raise NotImplementedError
+    def __iadd__(self, other):
+        raise NotImplementedError
+    # def get_norm(self): # return a copy for safety
+    #     # return most original data (non-user-defined) type (str,dict,list...)
+    #     return {key: self.data[key].get_norm() if hasattr(self.data[key], 'get_norm') 
+    #             else copy.deepcopy(self.data[key]) 
+    #             for key in self.data}
+    def serialize(self): # return a copy for safety
+        # return serialized type of self.data[key] (which can be eval() to original type)
+        return {key: self.data[key].serialize() if hasattr(self.data[key], 'serialize') 
+                else copy.deepcopy(self.data[key]) 
+                for key in self.data}
+ 
+class NestedDict(collections.UserDict):
+    """
+    {
+        names:{keys:values}
+    }
+    dict[str,dict[str,...dict[str,str]]]
+    """
+    __slots__=["data"]
+    class _MetaData(collections.UserString):...
+    
+    def _norm_tuple(self,maybe_tuple:str|tuple[str,...])->tuple:
+        if isinstance(maybe_tuple,tuple):
+            return maybe_tuple
+        # try:
+        #     value = ast.literal_eval(maybe_tuple)
+        #     return value if isinstance(value,tuple) else (value, )
+        # except ValueError:
+        return (maybe_tuple,) 
+    def append(self,arg:Iterable|Mapping|str|tuple[str,...],item=None):
+        match arg,item:
+            case _mapping,None if isinstance(_mapping,Mapping):
+                for key,value in _mapping.items():
+                    if key in self: # not first add
+                        # if isinstance(value,Mapping):
+                        if (isinstance(self[key],self.__class__))and(isinstance(value,Mapping)): # not leaf node
+                            self[key].append(value,None)
+                        elif isinstance(self[key],self.__class__):
+                            pass # 提前耗尽则不更新
+                        elif isinstance(value,Mapping):
+                            self[key].append(value,None)
+                        else:
+                            self[key] = self[key]+value
+                    else: # first add
+                        self[key] = self.__class__().append(value,None) if isinstance(value,Mapping) else self.__class__._MetaData(value)
+            case _iterable,None if isinstance(_iterable,Iterable):
+                for key,value in _iterable:
+                    self.append(key,value) 
+            case (current_key,*next_keys),value if value is not None:
+                if current_key in self: # not first add
+                    if isinstance(self[current_key],self.__class__): # not leaf node
+                        self[current_key].append(tuple(next_keys),value)
+                    else:# extend leaf node's current value
+                        self[current_key] = self[current_key]+value
+                else: # extend a leaf node with a tree
+                    self[current_key] = self.__class__().append(tuple(next_keys),value) if next_keys else self.__class__._MetaData(value)      
+                 
+            case str(key),str(value):
+                self[key] = self.__class__._MetaData(value)
+            case unmatched:
+                raise ValueError(f"unmatched: {unmatched}") # TODO
+        return self   
+    def _check_leaf(self,key):
+        try:
+            return isinstance(super().__getitem__(key),self.__class__)
+        except KeyError:
+            return False
+        
+    def __getitem__(self,maybe_tuple_key:str|tuple[str,...])->dict|list|Any:
+        keys = self._norm_tuple(maybe_tuple_key)
+        current_key = keys[0]
+        if self._check_leaf(current_key) and (len(keys)>1):
+            return super().__getitem__(current_key)[keys[1:]]
+        else:
+            return super().__getitem__(current_key)
+    
+    def get_items(self,superior_keys=None,maybe_tuple_key:str|tuple[str|tuple[str,...],...]=None,estimate_func:Callable[[tuple[str|tuple[str,...],...]],Any]=None):
+        if superior_keys is None:
+            superior_keys = []
+        else:
+            superior_keys = list(superior_keys)
+        keys = self._norm_tuple(maybe_tuple_key)
+        match keys[0]:
+            case str(current_key):
+                current_keys = [current_key]
+            case tuple(current_key):
+                current_keys = current_key
+            case None:
+                current_keys = list(self.keys())
+            case int(current_key):
+                if current_key<0:
+                    _slice = slice(-current_key,0,-1)
+                else:
+                    _slice = slice(0,current_key,1)
+                current_keys = list(self.keys())[_slice]
+            case _:
+                raise ValueError(" ")
+        for current_key in current_keys:
+            if self._check_leaf(current_key) and (len(keys)>1):
+                yield from self[current_key].get_items(tuple(superior_keys+[current_key]),keys[1:],estimate_func)
+            else:
+                try:
+                    yield tuple(superior_keys+[current_key]),self[current_key].data
+                except KeyError:
+                    if estimate_func is None:
+                        pass # do not yield the data that not involved (append)
+                    else:
+                        # estimate the data by keys
+                        estimated = estimate_func(tuple(superior_keys+[current_key]))
+                        yield tuple(superior_keys+[current_key]),self.__class__._MetaData(estimated).data
+
+    # -------------------functions for deal with nested dict-------------------------#
+    # @typechecked
+    def _key_sort_func(self,key:str,order:tuple[str,...]|None):
+        """
+        key sort function 
+        mostly used when sort a dict by key
+        mapping key to a specific `order` representation by order
+
+        since `str order` is very convenient, this function will map 
+        key to a special `str order` instead of `int order`
+
+        Args:
+            key: a str that need to be mapped
+            order: `None` or `tuple of str` that indicate the order
+        the rule is:
+            if order is None, use `str order`, so just map key itself
+            if order is tuple, assign priority according to index of order first, then use `str order` for rest keys that  not in  the tuple
+        """
+        if order is None:
+            return key 
+        elif key in order:
+            return chr(order.index(key))
+        else:
+            return chr(len(order))+key
+    # @typechecked
+    def sort(self,key_orders:tuple[tuple[str,...]|None]|None)->None:
+        """
+        sort the maybe_nested_dict level by level with corresponding key order
+        Args:
+            key_orders: 
+                an Iterable object that specifies each nested level's key order when each iteration. It' iteration length 
+                need not be equal to maybe_nested_dict's nested level nums.
+                If it's earyl exhausted, `None` will be used for next nested levels.
+                If it's still surplus when innermost nested level , the remaining values will be discarded.
+        """
+        match key_orders:
+            case None:
+                current_order = None
+                next_order = None
+            case tuple(orders):
+                current_order = orders[0]
+                next_order = orders[1:] if len(orders)>1 else None
+        for key in self.keys():
+            if isinstance(self[key],NestedDict):
+                self[key].sort(next_order) 
+        self.data = dict(sorted(self.items(),key=lambda kv:self._key_sort_func(kv[0],current_order)))

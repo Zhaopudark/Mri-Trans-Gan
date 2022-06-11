@@ -10,7 +10,10 @@ import tensorflow as tf
 # from ixi.ixi_pipeline import DataPipeLine as IXIDataPipeLine
 from typeguard import typechecked
 from typing import Callable
+from datasets.brats.brats_data import BraTSDataPathCollection
 from datasets.brats.brats_pipeline import BraTSBasePipeLine,BraTSDividingWrapper,BraTSPatchesWrapper
+from datasets.brats.bratsbase import BraTSData,BraTSMapping
+# BraTSDividingWrapper,BraTSPatchesWrapper
 class DataPipeline():
     @typechecked
     def __init__(self,args:dict,counters:dict) -> None:
@@ -45,18 +48,28 @@ class DataPipeline():
                     Then [D1,:,:] is  transverse plane or horizontal plane in `A:P,R:L` format
                     Then [:,D2,:] is  coronal plane in `S:I,R:L` format
                     Then [:,:,D3] is  sagittal plane in `S:I,A:P` format
+
+            axes_format:tuple[Literal["vertical","sagittal","coronal"],...]=("vertical","sagittal","coronal"),
+            axes_direction_format:tuple[Literal["S:I","A:P","R:L"],...]=("S:I","A:P","R:L"),
+            record_path="D:\\Datasets\\BraTS\\BraTS2021_new\\records",
+            axes_format=('vertical','sagittal','coronal'),
+            axes_direction_format=("S:I","A:P","R:L"),
+            
+            norm_method=args['norm'],
+            counters=counters,
+            seed=args['data_random_seed'],
             """
-            d = BraTSBasePipeLine(
-                path="D:\\Datasets\\BraTS\\BraTS2021_new",
-                record_path="D:\\Datasets\\BraTS\\BraTS2021_new\\records",
-                axes_format=('vertical','sagittal','coronal'),
-                axes_direction_format=("S:I","A:P","R:L"),
-                norm_method=args['norm'],
-                counters=counters,
-                seed=args['data_random_seed'],
-                )
-            d1 = BraTSDividingWrapper(d,dividing_rates=tuple(args['data_dividing_rates']),dividing_seed=args['data_dividing_seed'])
-            self.data_pipeline = BraTSPatchesWrapper(d1,
+            path_collection = BraTSDataPathCollection("D:\\Datasets\\BraTS\\BraTS2021_new")
+            datas = path_collection.get_individual_datas(tags=(None,None,('t1','t2','t1ce','flair','shared'),(args['norm'],'mask')))
+            self.mapping = BraTSMapping(
+                axes_format=("vertical","sagittal","coronal"),
+            axes_direction_format=("S:I","A:P","R:L"),
+            record_path="D:\\Datasets\\BraTS\\BraTS2021_new\\records2",)
+            d = BraTSBasePipeLine(datas)
+            # self.data_pipeline = d
+            # d1 = BraTSDividingWrapper(d,dividing_rates=tuple(args['data_dividing_rates']),dividing_seed=args['data_dividing_seed'])
+            # self.data_pipeline = d1
+            self.data_pipeline = BraTSPatchesWrapper(d,
                 cut_ranges=args['cut_ranges'],
                 patch_sizes=args['patch_sizes'],
                 patch_nums=args['patch_nums'],)
@@ -77,24 +90,26 @@ class DataPipeline():
     # def add_channel(inputs:dict[str:tf.Tensor]):
     #     return {key:value[...,tf.newaxis] for key,value in inputs.items()}  
     @typechecked
-    def pipeline_wrapper(self,pipeline:Callable): # tf.data.Dataset.from_generator 传递的一定是tensor
-        return tf.data.Dataset.from_generator(pipeline,output_signature=self.data_pipeline.output_structure)\
-            .map(self.map_func,num_parallel_calls=4,deterministic=True)\
+    def pipeline_wrapper(self,datas:dict[str,list[str]]): # tf.data.Dataset.from_generator 传递的一定是tensor
+        return tf.data.Dataset.from_tensor_slices(datas)\
+            .map(self.mapping.mapping_2,num_parallel_calls=4,deterministic=True)\
             .batch(self.batch_size,num_parallel_calls=4,deterministic=True)\
             .prefetch(tf.data.AUTOTUNE)
     def __call__(self):
-        return list(map(self.pipeline_wrapper,self.data_pipeline()))
+        # return list(map(self.pipeline_wrapper,self.data_pipeline()))
+        return self.pipeline_wrapper(self.data_pipeline()),None,None
 
 if __name__ == '__main__':
     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
     import tempfile
+    import ast
     args = {}
     args['dataset']= 'braTS'
     args['norm']='individual_min_max_norm'
     args['cut_ranges']=((155//2-8,155//2+7),(0,239),(0,239))
     args['data_dividing_rates'] = (0.7,0.25,0.05)
-    args['data_dividing_seed']= 1200
+    args['data_dividing_seed']= 0
     args['patch_sizes']=(16,128,128)
     args['patch_nums']=(1,3,3)
     args['batch_size'] =1
@@ -123,6 +138,17 @@ if __name__ == '__main__':
     # print(train_set.cardinality())
     # print(train_set.cardinality())
     print(len(train_set))
+    for item in train_set:
+        # decoded = ast.literal_eval(str(item["name"].numpy(),encoding='utf-8'))
+        print(len(item))
+        print(item["t1"].shape,item["t1"].dtype)
+        # decoded = ast.literal_eval(str(item["t1"].numpy(),encoding='utf-8'))
+        # slices = tuple(map(lambda x:slice(x[0],x[1]+1),decoded[-1]))
+        # print(decoded)
+        # print(type(decoded))
+        # print(slices)
+        print(item["t1"].numpy().min(),item["t1"].numpy().max())
+    
     # with tempfile.TemporaryDirectory() as dir_name:
     #     step = counters1['step']
     #     epoch = counters1['epoch']

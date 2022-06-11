@@ -5,7 +5,7 @@ from logging import handlers
 import argparse
 from typeguard import typechecked
 import tensorflow as tf
-from utils.dtype_helper import get_tuple_from_string,flatten
+from utils.dtype_helper import get_tuple_from_str,flatten
 from utils.logging_helper import set_global_loggers
 class ArgsPlus():
     """
@@ -46,10 +46,17 @@ class ArgsPlus():
         if passby_keys is None:
             passby_keys = set()
         stamp = ''
-        for (k1,v1),(k2,v2) in zip(vars.items(),default_vars.items()):
-            assert k1==k2
-            if (k1 not in passby_keys) and (v1 != v2):
-                stamp += f"_{self._stamp_shorter(k1,v1)}"
+        for key in vars:
+            if key not in passby_keys:
+                if (key not in default_vars) or (vars[key]!=default_vars[key]):
+                    stamp += f"_{self._stamp_shorter(key,vars[key])}"
+                else:
+                    pass
+
+        # for (k1,v1),(k2,v2) in zip(vars.items(),default_vars.items()):
+        #     assert k1==k2
+        #     if (k1 not in passby_keys) and (v1 != v2):
+        #         stamp += f"_{self._stamp_shorter(k1,v1)}"
         return stamp.strip("_")
     @typechecked
     def save_args(self,target_path:str):
@@ -77,6 +84,7 @@ def get_args(arg_path:str)->dict:
     initial_group.add_argument("--workspace",type=str)
     initial_group.add_argument("--init",type=str.lower)
     initial_group.add_argument("--indicator",type=str.lower)
+    initial_group.add_argument("--determinism",action='store_true',help="确定性算法")
     initial_group.add_argument("--global_random_seed",type=int,help="全局随机种子 其余部分")
     initial_group.add_argument("--logs_interval",type=int,default=1000)
     initial_group.add_argument("--checkpoint_interval",type=int,default=100)
@@ -85,15 +93,15 @@ def get_args(arg_path:str)->dict:
     df_group = parser.add_argument_group('data_flow')
     df_group.add_argument("--dataset",choices=['brats','ixi'],type=str.lower)
     df_group.add_argument("--data_random_seed",type=int)
-    df_group.add_argument("--data_dividing_rates",type=get_tuple_from_string)
+    df_group.add_argument("--data_dividing_rates",type=get_tuple_from_str)
     df_group.add_argument("--data_dividing_seed",type=int)
     df_group.add_argument("--norm",choices=['min_max_norm','z_score_norm','z_score_and_min_max_norm','individual_min_max_norm'],type=str.lower,default='individual_min_max_norm')
     df_group.add_argument("--raw_data_format",type=str,choices=['DHW','HWD'])
-    df_group.add_argument("--cut_ranges",type=get_tuple_from_string,metavar=tuple[tuple[int,int],...],help="should in the same `length` with raw_data_format")
-    df_group.add_argument("--patch_sizes",type=get_tuple_from_string,metavar=tuple[int,...],help="should in the same `length` with raw_data_format")
+    df_group.add_argument("--cut_ranges",type=get_tuple_from_str,metavar=tuple[tuple[int,int],...],help="should in the same `length` with raw_data_format")
+    df_group.add_argument("--patch_sizes",type=get_tuple_from_str,metavar=tuple[int,...],help="should in the same `length` with raw_data_format")
     df_group.add_argument("--batch_size",type=int,default=1)
-    df_group.add_argument("--patch_nums",type=get_tuple_from_string,metavar=tuple[int,...],help="should in the same `length` with raw_data_format")
-    df_group.add_argument("--domain",type=get_tuple_from_string,metavar=tuple[float,float])
+    df_group.add_argument("--patch_nums",type=get_tuple_from_str,metavar=tuple[int,...],help="should in the same `length` with raw_data_format")
+    df_group.add_argument("--domain",type=get_tuple_from_str,metavar=tuple[float,float])
     #----------------------------------------------------------------------------------------#
     ms_group = parser.add_argument_group('model_structure')
     ms_group.add_argument("--model_name",type=str)
@@ -127,7 +135,7 @@ def get_args(arg_path:str)->dict:
     rec_loss_group.add_argument("--MGD",action='store_true')
     rec_loss_group.add_argument("--Per_Reuse_D",action='store_true')
     metric_group = parser.add_argument_group('metric')
-    metric_group.add_argument("--metrics",type=get_tuple_from_string,metavar=tuple[str,...],default=('psnr3d','ssim3d'))
+    metric_group.add_argument("--metrics",type=get_tuple_from_str,metavar=tuple[str,...],default=('psnr3d','ssim3d'))
     #---------------------------------------------------------------------------------------#
     _group = rec_loss_group.add_mutually_exclusive_group()
     _group.add_argument('--Per', action='store_true')
@@ -157,12 +165,12 @@ def get_args(arg_path:str)->dict:
     #-------------------------------------------------------------------------------------------------------------#
     subparsers = parser.add_subparsers(title='learning_rate_schedule',dest='learning_rate_schedule',help='additional help')
     subparser_1 = subparsers.add_parser('cosine_decay',allow_abbrev=False)
-    subparser_1.add_argument("--cosine_decay_steps",type=int,default=80000)
+    subparser_1.add_argument("--cosine_decay_steps",type=int,default=92601)
     subparser_1.add_argument("--cosine_alpha",type=float,default=0.0)
     subparser_2 = subparsers.add_parser('cosine_decay_restarts',allow_abbrev=False)
-    subparser_2.add_argument("--cosine_decay_restarts_first_decay_steps",type=int,default=100)
+    subparser_2.add_argument("--cosine_decay_restarts_first_decay_steps",type=int,default=92601//2)
     subparser_2.add_argument("--cosine_decay_restarts_t_mul",type=float,default=2.0)
-    subparser_2.add_argument("--cosine_decay_restarts_m_mul",type=float,default=1.0)
+    subparser_2.add_argument("--cosine_decay_restarts_m_mul",type=float,default=0.5)
     subparser_2.add_argument("--cosine_decay_restarts_alpha",type=float,default=0.0)
     subparser_3 = subparsers.add_parser('exponential_decay',allow_abbrev=False)
     subparser_3.add_argument("--exponential_decay_steps",type=int,default=100)
@@ -173,8 +181,8 @@ def get_args(arg_path:str)->dict:
     subparser_4.add_argument("--inverse_time_decay_rate",type=float,default=0.98)
     subparser_4.add_argument("--inverse_time_decay_staircase",action='store_true')
     subparser_5 = subparsers.add_parser('piecewise_constant_decay',allow_abbrev=False)
-    subparser_5.add_argument("--piecewise_constant_decay_boundaries",type=get_tuple_from_string,metavar=tuple[int,...],default=[20000,40000,60000])
-    subparser_5.add_argument("--piecewise_constant_decay_values",type=get_tuple_from_string,metavar=tuple[float,...],default=[1.0,0.67,0.33,0.0])
+    subparser_5.add_argument("--piecewise_constant_decay_boundaries",type=get_tuple_from_str,metavar=tuple[int,...],default=[20000,40000,60000])
+    subparser_5.add_argument("--piecewise_constant_decay_values",type=get_tuple_from_str,metavar=tuple[float,...],default=[1.0,0.67,0.33,0.0])
     subparser_6 = subparsers.add_parser('poly_nomial_decay',allow_abbrev=False)
     subparser_6.add_argument("--poly_nomial_decay_steps",type=int,default=100)
     subparser_6.add_argument("--poly_nomial_decay_end_learning_rate",type=float,default=0.0001)
@@ -205,14 +213,12 @@ def experiment_runer(arg_path:str,logging_config_path:str):
     # tf.autograph.set_verbosity(10, alsologtostdout=False)
     
     from models.model_selector import ModelSelector 
-    physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
-    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+    tf.keras.utils.set_random_seed(args['global_random_seed'])
+    if args['determinism']:
+        tf.config.experimental.enable_op_determinism()
+        logging.getLogger(__name__).info(f"Determinism has been enabled!")
     model_selector = ModelSelector(args=args)
-    tf.keras.utils.set_random_seed(args['global_random_seed'])
-    tf.config.experimental.enable_op_determinism()
-    tf.keras.utils.set_random_seed(args['global_random_seed'])
     model = model_selector.model(args=args)
-    tf.keras.utils.set_random_seed(args['global_random_seed'])
     model.build()
     if args['action'] == 'train':
         model.train()
