@@ -6,7 +6,7 @@ import itertools
 import numpy as np
 import nibabel as nib
 import re
-from datasets.brats.brats_data import BraTSDataPathCollection
+from datasets.brats.brats_path_collection import BraTSDataPathCollection
 import functools
 PATH = "D:\\Datasets\\BraTS\\BraTS2021_new"
 file_pattern = re.compile(r'RSNA_ASNR_MICCAI_BraTS(?P<year>\d*)_(?P<training_type>Training|Validation)Data(?:\\{1}|[/]{1})(?P<patient_id>BraTS\d+_\d+)(?:\\{1}|[/]{1})(?P=patient_id)_(?P<modality>flair|t1ce|t1|t2)?(?:_)?(?P<info>\w*)?(?P<suffix>\.nii\.gz|\.csv|\.*)$')

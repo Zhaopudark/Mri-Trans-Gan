@@ -5,8 +5,8 @@ from logging import handlers
 import argparse
 from typeguard import typechecked
 import tensorflow as tf
-from utils.dtype_helper import get_tuple_from_str,flatten
-from utils.logging_helper import set_global_loggers
+from utils.types import get_tuple_from_str,flatten
+from utils.managers import set_global_loggers
 class ArgsPlus():
     """
     manager argparse.ArgumentParser

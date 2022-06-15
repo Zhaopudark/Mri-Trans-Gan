@@ -5,7 +5,7 @@ from typeguard import typechecked
 from subprocess import check_output
 import functools
 import numpy as np
-from datasets.brats.brats_data import BraTSDataPathCollection,is_affine_euqal,is_header_euqal
+from datasets.brats.brats_path_collection import BraTSDataPathCollection,is_affine_euqal,is_header_euqal
 from utils.dataset_helper import np_zero_close,read_nii_file,save_nii_file,norm_min_max,norm_z_score,np_min_max_on_sequence
 from utils.bar_helper import func_bar_injector
 

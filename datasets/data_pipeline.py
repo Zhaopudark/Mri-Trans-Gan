@@ -1,8 +1,5 @@
 """
-构建训练集
-测试集
-验证集
-seed
+Towards Specific Experiments
 """
 import os 
 import sys
@@ -10,10 +7,9 @@ import tensorflow as tf
 # from ixi.ixi_pipeline import DataPipeLine as IXIDataPipeLine
 from typeguard import typechecked
 from typing import Callable
-from datasets.brats.brats_data import BraTSDataPathCollection
-from datasets.brats.brats_pipeline import BraTSBasePipeLine,BraTSDividingWrapper,BraTSPatchesWrapper
-from datasets.brats.bratsbase import BraTSData,BraTSMapping
-# BraTSDividingWrapper,BraTSPatchesWrapper
+import datasets.brats as brats
+
+
 class DataPipeline():
     @typechecked
     def __init__(self,args:dict,counters:dict) -> None:
@@ -48,28 +44,18 @@ class DataPipeline():
                     Then [D1,:,:] is  transverse plane or horizontal plane in `A:P,R:L` format
                     Then [:,D2,:] is  coronal plane in `S:I,R:L` format
                     Then [:,:,D3] is  sagittal plane in `S:I,A:P` format
-
-            axes_format:tuple[Literal["vertical","sagittal","coronal"],...]=("vertical","sagittal","coronal"),
-            axes_direction_format:tuple[Literal["S:I","A:P","R:L"],...]=("S:I","A:P","R:L"),
-            record_path="D:\\Datasets\\BraTS\\BraTS2021_new\\records",
-            axes_format=('vertical','sagittal','coronal'),
-            axes_direction_format=("S:I","A:P","R:L"),
-            
-            norm_method=args['norm'],
-            counters=counters,
-            seed=args['data_random_seed'],
             """
-            path_collection = BraTSDataPathCollection("D:\\Datasets\\BraTS\\BraTS2021_new")
+            path_collection = brats.BraTSDataPathCollector("D:\\Datasets\\BraTS\\BraTS2021_new")
             datas = path_collection.get_individual_datas(tags=(None,None,('t1','t2','t1ce','flair','shared'),(args['norm'],'mask')))
-            self.mapping = BraTSMapping(
+            self.mapping = brats.BraTSMapping(
                 axes_format=("vertical","sagittal","coronal"),
             axes_direction_format=("S:I","A:P","R:L"),
             record_path="D:\\Datasets\\BraTS\\BraTS2021_new\\records2",)
-            d = BraTSBasePipeLine(datas)
+            d = brats.BraTSBasePipeLine(datas)
             # self.data_pipeline = d
             # d1 = BraTSDividingWrapper(d,dividing_rates=tuple(args['data_dividing_rates']),dividing_seed=args['data_dividing_seed'])
             # self.data_pipeline = d1
-            self.data_pipeline = BraTSPatchesWrapper(d,
+            self.data_pipeline = brats.BraTSPatchesWrapper(d,
                 cut_ranges=args['cut_ranges'],
                 patch_sizes=args['patch_sizes'],
                 patch_nums=args['patch_nums'],)
@@ -92,7 +78,7 @@ class DataPipeline():
     @typechecked
     def pipeline_wrapper(self,datas:dict[str,list[str]]): # tf.data.Dataset.from_generator 传递的一定是tensor
         return tf.data.Dataset.from_tensor_slices(datas)\
-            .map(self.mapping.mapping_2,num_parallel_calls=4,deterministic=True)\
+            .map(self.mapping.mapping_patches,num_parallel_calls=4,deterministic=True)\
             .batch(self.batch_size,num_parallel_calls=4,deterministic=True)\
             .prefetch(tf.data.AUTOTUNE)
     def __call__(self):

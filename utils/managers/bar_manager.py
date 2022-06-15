@@ -1,12 +1,14 @@
 
 import functools
 import logging
+import inspect
+from inspect import Parameter
 from typing import Callable
+
 from alive_progress import alive_bar
 from typeguard import typechecked
 from tensorflow.keras.utils import Progbar
-import inspect
-from inspect import Parameter
+
 
 @typechecked
 def func_bar_injector(func:Callable=None,total_number:int=None,bar_name:str='UnknownBar'):
