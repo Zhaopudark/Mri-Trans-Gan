@@ -1,20 +1,10 @@
-import os
-from typing import Iterable,Callable,Generator,Literal,Any,Sequence,get_type_hints
-import operator
+from typing import Any
 from typeguard import typechecked
 import itertools
-import functools
-import tensorflow as tf 
-import numpy as np
-import re
-import copy
-from utils.dataset_helper import read_nii_file,data_dividing,random_datas,get_random_from_seed
-from utils.dtype_helper import reduce_same
+
+from utils.operations import data_dividing,get_random_from_seed
 from utils.image.patch_process import index_cal
-from datasets.brats.brats_data import BraTSDataPathCollection
-from datasets.brats.bratsbase import BraTSData
-
-
+from .brats_data import BraTSData
 
 class BasePipeLine():
     def __init__(self,datas:list[Any]) -> None:

@@ -13,13 +13,13 @@ from models.layers._build_helper import Reconstruction
 # from normalizations import SpectralNormalization as Sn
 from models.layers.activations import activation_slect
 from models.layers.initializers import initializer_slect
-from utils.convolution_helper import get_conv_paddings as get_conv_padding_vector
-from utils.convolution_helper import get_padded_length_from_paddings as get_padded_length_from_padding_vector
-from utils.convolution_helper import normalize_paddings_by_data_format as normalize_padding_vectors_by_data_format
-from utils.convolution_helper import grab_length_by_data_format
-from utils.convolution_helper import normalize_padding
-from utils.convolution_helper import normalize_specific_padding_mode
-from utils.convolution_helper import normalize_tuple
+from utils.convolutions import get_conv_paddings as get_conv_padding_vector
+from utils.convolutions import get_padded_length_from_paddings as get_padded_length_from_padding_vector
+from utils.convolutions import normalize_paddings_by_data_format as normalize_padding_vectors_by_data_format
+from utils.convolutions import grab_length_by_data_format
+from utils.convolutions import normalize_padding
+from utils.convolutions import normalize_specific_padding_mode
+from utils.convolutions import normalize_tuple
 
 
 __all__ = [
