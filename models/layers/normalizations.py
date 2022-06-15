@@ -1,7 +1,9 @@
-import tensorflow as tf
-import numpy as np
-from functools import wraps
 import logging
+from functools import wraps
+
+import numpy as np
+import tensorflow as tf
+
 __all__ = [
     'BatchNormalization',
     'LayerNormalization',
@@ -316,7 +318,7 @@ class InstanceNormalization(GroupNormalization):
     """
     def __init__(self,*args,**kwargs):
         if 'groups' in kwargs:
-            logging.warning("The given value for groups will be overwritten.")
+            logging.getLogger(__name__).warning("The given value for groups will be overwritten.")
         kwargs['groups'] = -1
         super().__init__(*args,**kwargs)   
 #------------------------------------------------------------------------------------------------------------------------------#
@@ -477,8 +479,8 @@ class Linear(tf.keras.layers.Layer):
             shape=(self.units,), initializer='random_normal', trainable=True
         )
     def call(self, inputs):
-        print("????")
-        print(inputs)
+        logging.getLogger(__name__).debug("????")
+        logging.getLogger(__name__).debug(inputs)
         tf.print("????")
         tf.print(inputs)
         return tf.matmul(inputs, self.w) + self.b

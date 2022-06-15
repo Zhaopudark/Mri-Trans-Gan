@@ -1,6 +1,10 @@
+import logging
+
 import tensorflow as tf
+
 from models.blocks import mri_trans_gan_2d,mri_trans_gan_3d_special,mri_trans_gan_3d
 from models.networks._gan_helper import GeneratorHelper,DiscriminatorHelper
+
 """
 做模型结构的探究 
 开辟额外支路
@@ -13,17 +17,18 @@ __all__ = [
     'Generator',
     'Discriminator',
 ]
+
 BLOCKS_DICT = {'2D':mri_trans_gan_2d,'3D_special':mri_trans_gan_3d_special,'3D':mri_trans_gan_3d}
 ###################################################################
 class Generator(tf.keras.Model):
     def __init__(self,args,name=None,dtype=None):
         super(Generator,self).__init__(name=name,dtype=dtype)
         #--------------------------------------------------------#
-        up_sampling_method = args.up_sampling_method
-        capacity_vector = args.capacity_vector
-        res_blocks_num = args.res_blocks_num
-        self_attention = args.self_attention_G
-        dimensions_type = args.dimensions_type
+        up_sampling_method = args['up_sampling_method']
+        capacity_vector = args['capacity_vector']
+        res_blocks_num = args['res_blocks_num']
+        self_attention = args['self_attention_G']
+        dimensions_type = args['dimensions_type']
         #--------------------------------------------------------#
         G_helper = GeneratorHelper(name=name,args=args)
         last_activation_name = G_helper.output_activation_name()
@@ -81,7 +86,7 @@ class Generator(tf.keras.Model):
         self.built = True
     def call(self,in_put,training=True,step=None,epoch=None):
         # in_put=(x,mask)生成的样本(生成器输出)自带mask 要求真实样本你必须带有mask
-        # print("Debug hhhhhhhhhhhhh")
+        # logging.getLogger(__name__).debug("Debug hhhhhhhhhhhhh")
         x,x_m,mask = in_put
         for i,(item,broadcast_indicator) in enumerate(zip(self.block_list,self.broad_cast_list)):
             tmp_x_m = self.patch_mask_wrapper(x,x_m) # 处理非C维度
@@ -98,13 +103,13 @@ class Discriminator(tf.keras.Model):
     def __init__(self,args,name=None,dtype=None):
         super(Discriminator,self).__init__(name=name,dtype=dtype)
         #--------------------------------------------------------#
-        capacity_vector = int(args.capacity_vector)
-        dimensions_type = args.dimensions_type
-        self_attention = args.self_attention_D
-        sn_flag = bool(args.spectral_normalization)
-        sn_iter_k = int(args.sn_iter_k)
-        sn_clip_flag = bool(args.sn_clip_flag)
-        sn_clip_range = float(args.sn_clip_range)
+        capacity_vector = int(args['capacity_vector'])
+        dimensions_type = args['dimensions_type']
+        self_attention = args['self_attention_D']
+        sn_flag = bool(args['spectral_normalization'])
+        sn_iter_k = int(args['sn_iter_k'])
+        sn_clip_flag = bool(args['sn_clip_flag'])
+        sn_clip_range = float(args['sn_clip_range'])
         #--------------------------------------------------------#
         D_helper = DiscriminatorHelper(name=name,args=args)
         use_sigmoid = D_helper.output_sigmoid_flag()
@@ -156,7 +161,7 @@ class Discriminator(tf.keras.Model):
             flow_shape=item.compute_output_shape(input_shape=flow_shape).as_list()
         self.built = True
     def call(self,in_put,buf_flag=False,training=True,step=None,epoch=None): # 额外多一个buf_flag
-        # print("Debug hhhhhhhhhhhhh")
+        # logging.getLogger(__name__).debug("Debug hhhhhhhhhhhhh")
         x,x_m,*_ = in_put
         buf = []
         for item,broadcast_indicator in zip(self.block_list,self.broad_cast_list):
@@ -180,22 +185,19 @@ if __name__ == '__main__':
     x = tf.random.normal(shape=[1,16,128,128,1])
     x_m = tf.random.normal(shape=[1,16,240,240,1])
     m = tf.random.normal(shape=[1,16,128,128,1])
-    class tmp_args():
-        def __init__(self) -> None:
-            pass
-    args = tmp_args()
-    args.capacity_vector = 32
-    args.up_sampling_method = 'up_conv'
-    args.res_blocks_num = 9
-    args.self_attention_G = None
-    args.dimensions_type = '3D'
-    args.self_attention_D = None
-    args.spectral_normalization = False
-    args.sn_iter_k = 1
-    args.sn_clip_flag = True
-    args.sn_clip_range = 128.0
-    args.domain = [0.0,1.0]
-    args.gan_loss_name = "WGAN-GP"
+    args = {}
+    args['capacity_vector'] = 32
+    args['up_sampling_method'] = 'up_conv'
+    args['res_blocks_num'] = 9
+    args['self_attention_G'] = None
+    args['dimensions_type'] = '3D'
+    args['self_attention_D'] = None
+    args['spectral_normalization'] = False
+    args['sn_iter_k'] = 1
+    args['sn_clip_flag'] = True
+    args['sn_clip_range'] = 128.0
+    args['domain'] = [0.0,1.0]
+    args['gan_loss_name'] = "WGAN-GP"
     policy = tf.keras.mixed_precision.Policy('mixed_float16')
     g = Generator(args,dtype=policy)
     d = Discriminator(args,dtype=policy)

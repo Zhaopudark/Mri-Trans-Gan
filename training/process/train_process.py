@@ -1,33 +1,26 @@
 """
 将GAN的训练过程 也进行封装 以便于调试
 """
-import sys
-import os
+import logging
 import tensorflow as tf
-# base = os.path.dirname(os.path.abspath(__file__))
-# sys.path.append(os.path.join(base,'../'))
-# sys.path.append(os.path.join(base,'../../'))
-import functools
-from collections.abc import Iterable
+from typeguard import typechecked
+
+
 __all__ = [
     'TrainProcess',
 ]
+
 class TrainProcess():
     """
     抽象出训练测试的等方法
     """
-    def __init__(self,args):
+    @typechecked
+    def __init__(self,args:dict):
         """
         models,optimizers 用于普遍的通用的初始化
         """
-        if hasattr(args,'xla'):
-            self.xla = bool(args.xla)
-        else:
-            self.xla = False 
-        if hasattr(args,'mixed_precision'):
-            self.mixed_precision = bool(args.mixed_precision)
-        else:
-            self.mixed_precision = False 
+        self.xla = args['xla']
+        self.mixed_precision = args['mixed_precision']
     #----------------------------------------------------------------------------------------------------------#
     def _apply_gradients(self,optmizer,gradient,variable):
         optmizer.apply_gradients(zip(gradient,variable))
@@ -58,20 +51,20 @@ class TrainProcess():
             _ = list(map(self._apply_gradients,optimizer_list,gradient_list,variable_list))
             return loss_list
         if self.mixed_precision:
-            print("Mixed Precision used!")
+            logging.getLogger(__name__).info("Mixed Precision used!")
             wrappered_func = mixed_wrappered_func
         else:
             wrappered_func = unmixed_wrappered_func
         if self.xla:
             wrappered_func = tf.function(wrappered_func,jit_compile=True)
-            print("XLA used in training!")
+            logging.getLogger(__name__).info("XLA used in training!")
         else:
             wrappered_func = tf.function(wrappered_func)
         return wrappered_func
     def predict_wrapper(self,predict_func):
         if self.xla:
             wrappered_func = tf.function(predict_func,jit_compile=True)
-            print("XLA used in predicit!")
+            logging.getLogger(__name__).info("XLA used in predicit!")
         else:
             wrappered_func = tf.function(predict_func)
         return wrappered_func

@@ -23,8 +23,8 @@ __all__ = [
 ]
 class CycleConsistencyLoss():
     def __init__(self,args):
-        self.cc_flag = bool(args.CC)
-        self.cc_l = float(args.CC_l)
+        self.cc_flag = bool(args['CC'])
+        self.cc_l = float(args['CC_l'])
         #--------------------------------------------#
         if self.cc_flag:
             self.call = self.cc_wrapper(self.call)
@@ -42,18 +42,18 @@ class CycleConsistencyLoss():
         return self.cc_l*(mae(x,x__)+mae(y,y__))
 class DualGanReconstructionLoss():
     def __init__(self,args): #MAE MSE MGD Per Sty
-        self.mae_flag = bool(args.MAE)
-        self.mse_flag = bool(args.MSE)
-        self.mgd_flag = bool(args.MGD)
+        self.mae_flag = bool(args['MAE'])
+        self.mse_flag = bool(args['MSE'])
+        self.mgd_flag = bool(args['MGD'])
         #--------------------------------------------#
-        self.per_d_flag = bool(args.Per_Reuse_D)
-        self.per_flag = bool(args.Per)
-        self.per_2d_flag = bool(args.Per_2D)
-        self.sty_flag = bool(args.Sty)
-        self.offset = min(args.domain)
-        self.scale = max(args.domain)-min(args.domain)
+        self.per_d_flag = bool(args['Per_Reuse_D'])
+        self.per_flag = bool(args['Per'])
+        self.per_2d_flag = bool(args['Per_2D'])
+        self.sty_flag = bool(args['Sty'])
+        self.offset = min(args['domain'])
+        self.scale = max(args['domain'])-min(args['domain'])
         self.transfer_learning_model = PerceptualLossExtractor(
-                model_name=args.transfer_learning_model.lower(),
+                model_name=args['transfer_learning_model'].lower(),
                 data_format='channels_last',
                 transform_high_dimension=True,
                 use_pooling=False,

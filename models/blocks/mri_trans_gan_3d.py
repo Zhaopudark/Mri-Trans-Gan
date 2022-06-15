@@ -6,13 +6,12 @@ __all__ = [
     'Conv4S2',
     'Conv4S1', 
 ]
-import sys
-import os
 import logging
 import tensorflow as tf
 from models.layers.convolutions import Conv3D,UpSampalingConv3D,UpSubpixelConv3D,ConvPadConcretization
 from models.layers.normalizations import InstanceNormalization
 from models.layers.activations import Activation
+
 """
 Cycle GAN Generator blocks
 """
@@ -21,7 +20,7 @@ class Conv7S1(tf.keras.layers.Layer):#c7s1_k
     def __init__(self,
                  filters,
                  spectral_normalization=False,
-                 use_bias=False,
+                 use_bias=True,
                  activation='relu',
                  specific_out_dtype=None,
                  name=None,
@@ -57,7 +56,7 @@ class DownSampling(tf.keras.layers.Layer):#dk
     def __init__(self,
                  filters,
                  spectral_normalization=False,
-                 use_bias=False,
+                 use_bias=True,
                  specific_out_dtype=None,
                  name=None,
                  dtype=None,
@@ -91,7 +90,7 @@ class ResBlock(tf.keras.layers.Layer):#rk
     def __init__(self,
                  filters,
                  spectral_normalization=False,
-                 use_bias=False,
+                 use_bias=True,
                  specific_out_dtype=None,
                  name=None,
                  dtype=None,
@@ -137,7 +136,7 @@ class ResBlocks(tf.keras.layers.Layer):#rks
     def __init__(self,
                  filters,
                  spectral_normalization=False,
-                 use_bias=False,
+                 use_bias=True,
                  n=6,
                  specific_out_dtype=None,
                  name=None,
@@ -166,7 +165,7 @@ class UpSampling(tf.keras.layers.Layer):#uk
     def __init__(self,
                  filters,
                  spectral_normalization=False,
-                 use_bias=False,specific_out_dtype=None,
+                 use_bias=True,specific_out_dtype=None,
                  name=None,
                  dtype=None,
                  up_sampling_method='up_conv',
@@ -181,7 +180,7 @@ class UpSampling(tf.keras.layers.Layer):#uk
                                            use_bias=use_bias,
                                            dtype=dtype)
         elif up_sampling_method == 'sub_pixel_up':
-            logging.warning("UpSampling has been replaced by UpSubpixelConv3D")
+            logging.getLogger(__name__).warning("UpSampling has been replaced by UpSubpixelConv3D")
             self.l1_up = UpSubpixelConv3D(filters=filters,
                                           kernel_size=[3,3,3],
                                           strides=[2,2,2],
@@ -214,7 +213,7 @@ class Conv4S2(tf.keras.layers.Layer):#ck
                  filters,
                  spectral_normalization=False,
                  norm=True,
-                 use_bias=False,
+                 use_bias=True,
                  specific_out_dtype=None,
                  name=None,
                  dtype=None,

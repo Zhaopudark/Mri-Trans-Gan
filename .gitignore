@@ -1,9 +1,12 @@
-*__pycache__
-*pytest_cache
-*tmp
-*bak
+*cache*
+*tmp*
+*bak*
 *.bak
-*~
+*~*
 *.png
 *.txt
 *.csv
+*.index
+*ckpt*
+*.ipynb_checkpoints
+*.log*

@@ -1,5 +1,8 @@
-import tensorflow as tf 
+
 import time
+import logging
+
+import tensorflow as tf 
 __all__ = [
     'Checkpoint',
 ]
@@ -19,13 +22,13 @@ class Checkpoint():
                                                          step_counter=self.__step,
                                                          checkpoint_interval=self.__checkpoint_interval)
         self.__start = time.perf_counter() 
-        print("counters_dict have:",self.__counters_dict.keys())
+        logging.getLogger(__name__).info(f"counters_dict have:{self.__counters_dict.keys()}")
     def save(self):
         save_path = self.__ckpt_manager.save(check_interval=True)
         if save_path is not None:
-            print(f"Ckpt saved when step/epoch:{self.__step.numpy()}/{(self.__epoch).numpy()} completed!")
-            print(f"{self.__checkpoint_interval} steps take {time.perf_counter()-self.__start} sec.")
-            print(f"Path:{save_path}")
+            logging.getLogger(__name__).debug(f"Ckpt saved when step/epoch:{self.__step.numpy()}/{(self.__epoch).numpy()} completed!")
+            logging.getLogger(__name__).debug(f"{self.__checkpoint_interval} steps take {time.perf_counter()-self.__start} sec.")
+            logging.getLogger(__name__).debug(f"Path:{save_path}")
             self.__start = time.perf_counter() 
         return save_path
     def restore_or_initialize(self):
@@ -35,7 +38,7 @@ class Checkpoint():
         return  self.__ckpt_manager.checkpoints
     def restore(self,kept_point):
         self.__ckpt.restore(kept_point)
-        print(f"current_checkpoint:{kept_point}")
+        logging.getLogger(__name__).info(f"current_checkpoint:{kept_point}")
  
 if __name__=='__main__':
     step = tf.Variable(0,dtype=tf.int64,trainable=False)

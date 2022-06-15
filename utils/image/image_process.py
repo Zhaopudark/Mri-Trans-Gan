@@ -1,20 +1,14 @@
 """
 将若干通用性的2D 3D图片处理仍无放到这里
 提供 图片文件的读写方法实现
-但是'$1'方法不在此处运行 而是被模型或logs调用
 """
 import os 
 import math
 import matplotlib.pyplot as plt
-plt.switch_backend('agg')
 from PIL import Image
 import tensorflow as tf
 import numpy as np 
 import io
-from collections.abc import Iterable
-import sys
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(base, '../'))
 from utils.types_check import type_check
 __all__ = [
     'ImageSaver',
@@ -53,6 +47,7 @@ class Drawer():
     def __init__(self):
         pass
     def _dict2img(self,imgs:dict):
+        plt.switch_backend('agg') #
         img_num = len(imgs.keys())
         sub_window_w_num = math.ceil(math.sqrt(float(img_num)))
         sub_window_h_num = sub_window_w_num

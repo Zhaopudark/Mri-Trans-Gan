@@ -2,9 +2,12 @@
 工具类
 其实里面都只是数值计算函数
 """
-import numpy as np 
+
 import math
 import logging
+
+import numpy as np 
+
 def cut_img_3D(img):
     """
     将3D的数据进行剪裁,去除3D黑边
@@ -284,7 +287,7 @@ def index_cal(valid_range:list,sub_seq_len:int,sub_seq_num=None):
             if sub_seq_num*sub_seq_len < valid_len:
                 old_sub_seq_num = sub_seq_num
                 sub_seq_num = math.ceil(valid_len/sub_seq_len)
-                logging.warning(f"sub_seq_num has been changed from {old_sub_seq_num} to {sub_seq_num}.")
+                logging.getLogger(__name__).warning(f"sub_seq_num has been changed from {old_sub_seq_num} to {sub_seq_num}.")
             else:
                 pass
     index_range_buf = []

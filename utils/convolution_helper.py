@@ -345,7 +345,6 @@ ANCHOR 问题6 反卷积过程中的padding是否可等价?如何进行等价
     因此 deconv 的padding output_padding 都并非指示一个 tf.pad()之类的过程 
     因此 反卷积过程中的padding无法也不必做等价
 """
-import logging
 import tensorflow as tf 
 from functools import wraps
 from typeguard import typechecked
@@ -644,7 +643,7 @@ def conv_input_length(output_length:int,filter_size:int,padding:str,stride:int):
     padding == same时
         pad_left = filter_size//2
         pad_right = filter_size-filter_size//2-1
-    设 p 为 '$1'
+    设 p 为 "使返回的input_length为input_length_range的最小
     依据 
     output_length = (input_length+left_pad+right_pad-filter_size+1+stride-1)//stride
     对计算过程进行逆向 求出 最小的input_length
@@ -703,7 +702,7 @@ def deconv_output_length(input_length:int,
     本函数mimic了和tf.keras源码一致的output_length计算过程
         用户有output_padding需求时
             先规定artificial_padding_behavior为 conv_output_length() 中的 basic artificial_padding_behavior
-            规定 p 为 '$1'
+            规定 p 为 "使返回的input_length为input_length_range的最小"
             input_length(artificial_padding_conv,p)可以给出最小的input_length 同conv_input_length()函数 不再赘述
             即 
             _conv_input_length = conv_input_length(...)

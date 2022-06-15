@@ -18,11 +18,11 @@ class Generator(tf.keras.Model):
     def __init__(self,args,name=None,dtype=None):
         super(Generator,self).__init__(name=name,dtype=dtype)
         #--------------------------------------------------------#
-        up_sampling_method = args.up_sampling_method
-        capacity_vector = args.capacity_vector
-        res_blocks_num = args.res_blocks_num
-        self_attention = args.self_attention_G
-        dimensions_type = args.dimensions_type
+        up_sampling_method = args['up_sampling_method']
+        capacity_vector = args['capacity_vector']
+        res_blocks_num = args['res_blocks_num']
+        self_attention = args['self_attention_G']
+        dimensions_type = args['dimensions_type']
         #--------------------------------------------------------#
         G_helper = GeneratorHelper(name=name,args=args)
         last_activation_name = G_helper.output_activation_name()
@@ -112,13 +112,13 @@ class Discriminator(tf.keras.Model):
     def __init__(self,args,name=None,dtype=None):
         super(Discriminator,self).__init__(name=name,dtype=dtype)
         #--------------------------------------------------------#
-        capacity_vector = int(args.capacity_vector)
-        dimensions_type = args.dimensions_type
-        self_attention = args.self_attention_D
-        sn_flag = bool(args.spectral_normalization)
-        sn_iter_k = int(args.sn_iter_k)
-        sn_clip_flag = bool(args.sn_clip_flag)
-        sn_clip_range = float(args.sn_clip_range)
+        capacity_vector = int(args['capacity_vector'])
+        dimensions_type = args['dimensions_type']
+        self_attention = args['self_attention_D']
+        sn_flag = bool(args['spectral_normalization'])
+        sn_iter_k = int(args['sn_iter_k'])
+        sn_clip_flag = bool(args['sn_clip_flag'])
+        sn_clip_range = float(args['sn_clip_range'])
         #--------------------------------------------------------#
         D_helper = DiscriminatorHelper(name=name,args=args)
         use_sigmoid = D_helper.output_sigmoid_flag()
@@ -207,22 +207,19 @@ if __name__ == '__main__':
     x = tf.random.normal(shape=[1,3,128,128,1])
     x_m = tf.random.normal(shape=[1,16,240,240,1])
     m = tf.random.normal(shape=[1,3,128,128,1])
-    class tmp_args():
-        def __init__(self) -> None:
-            pass
-    args = tmp_args()
-    args.capacity_vector = 32
-    args.up_sampling_method = 'up_conv'
-    args.res_blocks_num = 9
-    args.self_attention_G = None
-    args.dimensions_type = '3D_special'
-    args.self_attention_D = None
-    args.spectral_normalization = False
-    args.sn_iter_k = 1
-    args.sn_clip_flag = True
-    args.sn_clip_range = 128.0
-    args.domain = [0.0,1.0]
-    args.gan_loss_name = "WGAN-GP"
+    args = {}
+    args['capacity_vector'] = 32
+    args['up_sampling_method'] = 'up_conv'
+    args['res_blocks_num'] = 9
+    args['self_attention_G'] = None
+    args['dimensions_type'] = '3D_special'
+    args['self_attention_D'] = None
+    args['spectral_normalization'] = False
+    args['sn_iter_k'] = 1
+    args['sn_clip_flag'] = True
+    args['sn_clip_range'] = 128.0
+    args['domain'] = [0.0,1.0]
+    args['gan_loss_name'] = "WGAN-GP"
     policy = tf.keras.mixed_precision.Policy('mixed_float16')
     g = Generator(args,dtype=policy)
     d = Discriminator(args,dtype=policy)

@@ -1,6 +1,7 @@
-import sys
-import os
+import logging
+
 import tensorflow as tf
+
 from models.layers._build_helper import Reconstruction
 from models.layers.normalizations import SpectralNormalization as Sn
 from models.layers.activations import activation_slect

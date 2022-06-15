@@ -16,14 +16,13 @@
 构建若干装饰器 输入为rec_loss x x_ y y_ 
 返回对应的
 """
-import sys
-import os
-import logging
 import copy
+import logging
 from typeguard import typechecked
-import numpy as np 
+
 import tensorflow as tf
-import functools
+
+
 __all__ = [
     'MeanAbsoluteError',
     'MeanSquaredError',
@@ -50,7 +49,7 @@ class LossAcrossListWrapper(tf.keras.losses.Loss):
     def get_config(self):
         config = {'inner_loss': tf.keras.losses.serialize(self.inner_loss)}
         base_config = super().get_config()
-        return dict(list(base_config.items()) + list(config.items()))
+        return base_config|config
 
     @classmethod
     def from_config(cls, config, custom_objects=None):
@@ -141,9 +140,8 @@ class MeanVolumeGradientError(tf.keras.losses.Loss):
     """
     @typechecked
     def __init__(self,mode:str='L1',name:str='mean_volume_gradient_error',data_format:str='channels_last',**kwargs) -> None:
-        if 'reduction' in kwargs.keys():
-            if kwargs['reduction'] != tf.keras.losses.Reduction.NONE:
-                logging.warning("""
+        if 'reduction' in kwargs.keys() and kwargs['reduction'] != tf.keras.losses.Reduction.NONE:
+            logging.getLogger(__name__).warning("""
                     MeanVolumeGradientError will reduce output by its own reduction. 
                     Setting `reduction` is ineffective.
                     Output will be reduce to [B,{N-2},C] shape whether the input_shape is 
@@ -151,9 +149,7 @@ class MeanVolumeGradientError(tf.keras.losses.Loss):
                     """)
         kwargs['reduction'] = tf.keras.losses.Reduction.NONE
         super().__init__(name=name,**kwargs)
-        self.loss_kwargs = {}
-        self.loss_kwargs['mode'] = mode
-        self.loss_kwargs['data_format'] = data_format
+        self.loss_kwargs = {'mode': mode, 'data_format': data_format}
         if mode.upper() == 'L1':
             self.loss_func = self._l1_loss
         elif mode.upper() == 'L2':
@@ -208,18 +204,17 @@ class MeanVolumeGradientError(tf.keras.losses.Loss):
         else:
             return list(range(len(x.shape)))[3::] # indicate`D1,D2,...,D{N-2}` in [B,{N-2},C,D1,D2,...,D{N-2}]
     def _expand_or_squeeze_sample_weight(self,y_true,y_pred,sample_weight=None):
-        if sample_weight is not None:
-            sample_weight = tf.convert_to_tensor(sample_weight)
-            if self.data_format == 'channels_last':
-                loss_shape = [y_true.shape[0],len(y_true.shape)-2,y_true.shape[-1]]
-            else:
-                loss_shape = [y_true.shape[0],len(y_true.shape)-2,y_true.shape[1]]
-            if (len(sample_weight.shape)==1) and (sample_weight.shape[0]==loss_shape[1]): # suppose it indicate `N-2` dimension
-                    sample_weight = tf.expand_dims(sample_weight,axis=0) # [1,N-2]
-                    sample_weight = tf.expand_dims(sample_weight,axis=-1) # [1,N-2,1]
-            sample_weight = tf.broadcast_to(sample_weight,shape=loss_shape) # if shape un-matched, raise error
-        else:
+        if sample_weight is None:
             return sample_weight
+        sample_weight = tf.convert_to_tensor(sample_weight)
+        if self.data_format == 'channels_last':
+            loss_shape = [y_true.shape[0],len(y_true.shape)-2,y_true.shape[-1]]
+        else:
+            loss_shape = [y_true.shape[0],len(y_true.shape)-2,y_true.shape[1]]
+        if (len(sample_weight.shape)==1) and (sample_weight.shape[0]==loss_shape[1]): # suppose it indicate `N-2` dimension
+                sample_weight = tf.expand_dims(sample_weight,axis=0) # [1,N-2]
+                sample_weight = tf.expand_dims(sample_weight,axis=-1) # [1,N-2,1]
+        sample_weight = tf.broadcast_to(sample_weight,shape=loss_shape) # if shape un-matched, raise error
     def call(self,y_true,y_pred):
         y_true_gradient = self._get_volume_gradient(y_true)
         y_pred_gradient = self._get_volume_gradient(y_pred)      
@@ -228,11 +223,9 @@ class MeanVolumeGradientError(tf.keras.losses.Loss):
         sample_weight = self._expand_or_squeeze_sample_weight(y_true,y_pred,sample_weight)
         return super().__call__(y_true,y_pred,sample_weight)
     def get_config(self):
-        config = {}
-        if hasattr(self,'loss_kwargs'):
-            config = {**self.loss_kwargs}     
+        config = {**self.loss_kwargs} if hasattr(self,'loss_kwargs') else {}
         base_config = super().get_config()
-        return dict(list(base_config.items()) + list(config.items()))
+        return base_config|config
 
 class MeanFeatureReconstructionError(tf.keras.losses.Loss):
     """
@@ -294,10 +287,9 @@ class MeanFeatureReconstructionError(tf.keras.losses.Loss):
     """
     @typechecked
     def __init__(self,mode:str='L1',name:str='mean_feat_reco_error',**kwargs) -> None:
-        if 'reduction' in kwargs.keys():
-            if kwargs['reduction'] != tf.keras.losses.Reduction.NONE:
-                logging.warning(
-                    """
+        if 'reduction' in kwargs.keys() and kwargs['reduction'] != tf.keras.losses.Reduction.NONE:
+            logging.getLogger(__name__).warning(
+                """
                     MeanFeatureReconstructionError will reduce output by its own reduction. 
                     Setting `reduction` is ineffective.
                     Output will be reduce to [B] shape always.               
@@ -324,7 +316,7 @@ class MeanFeatureReconstructionError(tf.keras.losses.Loss):
     def get_config(self):
         config = {**self.loss_kwargs} if hasattr(self,'loss_kwargs') else {}
         base_config = super().get_config()
-        return dict(list(base_config.items()) + list(config.items()))
+        return base_config|config
 
 
 class MeanStyleReconstructionError(tf.keras.losses.Loss):
@@ -398,7 +390,7 @@ class MeanStyleReconstructionError(tf.keras.losses.Loss):
     @typechecked
     def __init__(self,name:str='mean_style_reco_error',data_format:str='channels_last',**kwargs) -> None:
         if ('reduction' in kwargs.keys()) and (kwargs['reduction'] != tf.keras.losses.Reduction.NONE):
-            logging.warning(
+            logging.getLogger(__name__).warning(
                 """
                 MeanStyleReconstructionError will reduce output by its own reduction. 
                 Setting `reduction` is ineffective.
@@ -430,7 +422,7 @@ class MeanStyleReconstructionError(tf.keras.losses.Loss):
     def get_config(self):
         config = {**self.loss_kwargs} if hasattr(self,'loss_kwargs') else {}
         base_config = super().get_config()
-        return dict(list(base_config.items()) + list(config.items()))
+        return base_config|config
 
 if __name__ == '__main__':
     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')

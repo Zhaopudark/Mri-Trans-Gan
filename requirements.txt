@@ -1,5 +1,7 @@
-tensorflow
-pytorch
+# tensorflow
+# pytorch
+alive_progress
+typeguard
 pylint 
 matplotlib 
 opencv-python  

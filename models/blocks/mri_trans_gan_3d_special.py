@@ -6,8 +6,6 @@ __all__ = [
     'Conv4S2',
     'Conv4S1', 
 ]
-import sys
-import os
 import logging
 import tensorflow as tf
 from models.layers.convolutions import Conv3D,UpSampalingConv3D,UpSubpixelConv3D
@@ -187,7 +185,7 @@ class UpSampling(tf.keras.Model):#uk
                                            dtype=dtype,
                                            **kwargs)
         elif up_sampling_method == 'sub_pixel_up':
-            logging.warning("UpSampling has been replaced by UpSubpixelConv3D")
+            logging.getLogger(__name__).warning("UpSampling has been replaced by UpSubpixelConv3D")
             self.l1_up = UpSubpixelConv3D(filters=filters,
                                           kernel_size=[3,3,3],
                                           strides=[1,2,2],

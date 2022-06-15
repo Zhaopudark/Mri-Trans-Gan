@@ -17,9 +17,9 @@ def metrics_select(metric_name):
         raise ValueError(f"Unsupported metric {metric_name}") 
 
 class MetricsConductor():
-    def __init__(self,metrics_list):
+    def __init__(self,metrics):
         self._metrics = []
-        for item in metrics_list:
+        for item in metrics:
             self._metrics.append(metrics_select(metric_name=item))
         """
         [[psnr1,psnr2],

@@ -6,7 +6,9 @@ import copy
 import logging
 from functools import partial,wraps
 from typeguard import typechecked
+
 import tensorflow as tf
+
 from models.layers._build_helper import Reconstruction
 # from normalizations import SpectralNormalization as Sn
 from models.layers.activations import activation_slect
@@ -18,6 +20,8 @@ from utils.convolution_helper import grab_length_by_data_format
 from utils.convolution_helper import normalize_padding
 from utils.convolution_helper import normalize_specific_padding_mode
 from utils.convolution_helper import normalize_tuple
+
+
 __all__ = [
     'Conv2D',
     'Conv2DVgg',
@@ -107,8 +111,7 @@ class ConvPadConcretization(tf.keras.layers.Wrapper):
         # For correct output when a layer have not been built, pad behavior must put here but not in build() func
         if not self.fused: 
             inputs = tf.pad(inputs,paddings=self.padding_vectors,mode=self.padding_mode,constant_values=self.padding_constant)
-        output = self.layer(inputs,*args,**kwargs)
-        return output
+        return self.layer(inputs,*args,**kwargs)
     def get_config(self):
         config = {'padding_mode': self.padding_mode,
                   'padding_constant': self.padding_constant}
@@ -117,7 +120,7 @@ class ConvPadConcretization(tf.keras.layers.Wrapper):
             if 'config' in base_config['layer'].keys():
                 if 'padding' in base_config['layer']['config'].keys():
                     base_config['layer']['config']['padding'] = self._padding
-        return dict(list(base_config.items())+list(config.items()))
+        return base_config|config
 #------------------------------------------------------------------------------------------------------------------------------#
 class Conv1D(tf.keras.layers.Conv1D):
     def __init__(self,*args,**kwargs):
@@ -324,7 +327,7 @@ class UpSampalingConv(tf.keras.layers.Layer):
         _convolution_kwargs['data_format'] = data_format # upsampling and convolution share a data_format
         dilation_rate = normalize_tuple(dilation_rate,_rank,'dilation_rate')
         if any([x!=1 for x in dilation_rate]):
-            logging.warning("UpSampalingConv ususally runs with dilation_rate==1, please be careful whether "
+            logging.getLogger(__name__).warning("UpSampalingConv ususally runs with dilation_rate==1, please be careful whether "
                 f"the operation is your desired one when dilation_rate={dilation_rate}.")
         _convolution_kwargs['dilation_rate'] = dilation_rate
         _convolution_kwargs['groups'] = groups
@@ -372,7 +375,7 @@ class UpSampalingConv(tf.keras.layers.Layer):
     def get_config(self):
         config = {**self._upsampling_kwargs,**self._convolution_kwargs}
         base_config = super().get_config()
-        return dict(list(base_config.items())+list(config.items()))
+        return base_config|config
 class UpSampalingConv1D(UpSampalingConv):
     def __init__(self,**kwargs):
         super().__init__(rank=1,**kwargs)
@@ -516,59 +519,6 @@ class Vgg2Conv3D(tf.keras.layers.Layer):
 
 
 
-#------------------------------------------------------------------------------------------------------------------------------#
-# class Conv2DVgg(tf.keras.layers.Layer):
-#     def __init__(self,
-#                  filters=None,
-#                  kernel_size=None,
-#                  strides=None,
-#                  padding=None,
-#                  use_bias=False,
-#                  kernel_initializer='glorot_uniform', 
-#                  bias_initializer='zeros',
-#                  activation=None,
-#                  name=None,
-#                  dtype=None,**kwargs):
-#         """
-#         接收VGG16 19 参数的2D卷积层
-#         不支持谱范数正则
-#         """
-#         super(Conv2DVgg,self).__init__(name=name,dtype=dtype)
-#         self.filters = filters#out put channels
-#         self.kernel_size = kernel_size#[3,3]
-#         if len(strides)!=2:
-#             raise ValueError("2D conv need 2 dimensions for strides")
-#         self.strides = [1]+strides+[1]
-#         self.padding = padding.upper()
-#         self.use_bias = use_bias
-#         self.activation = activation_slect(activation)
-#         self.kernel_initializer = initializer_slect(kernel_initializer)
-#         self.bias_initializer = initializer_slect(bias_initializer)
-#     def build(self,input_shape):
-#         super(Conv2DVgg,self).build(input_shape=input_shape)
-#         if len(input_shape)!=4:
-#             raise ValueError("2D conv need 4 dimensions for input_shape")
-#         output_shape,padding,padding_vect = Reconstruction.ConvCalculation(input_shape=input_shape,
-#                                                                            filters=self.filters,
-#                                                                            kernel_size=self.kernel_size,
-#                                                                            strides=self.strides[1:-1],
-#                                                                            padding=self.padding)
-#         self.padding = padding
-#         self.padding_vect = padding_vect  
-#         self.w = self.add_weight('w',(self.kernel_size+[input_shape[-1]]+[self.filters]),initializer=self.kernel_initializer,trainable=False)
-#         if self.use_bias:
-#             self.b = self.add_weight('b',(output_shape[-1]),initializer=self.bias_initializer,trainable=False)
-#         else:
-#             pass 
-#         output_shape = output_shape[:]
-#         return output_shape
-#     def call(self,x,training):
-#         x = tf.pad(x,self.padding_vect,self.padding)
-#         y = tf.nn.conv2d(input=x,filters=self.w,strides=self.strides,padding='VALID')#接管padding方式后 用valid实现等效
-#         if self.use_bias:
-#             y += self.b
-#         y = self.activation(y)
-#         return tf.cast(y,dtype=tf.float32)  
 # #------------------------------------------------------------------------------------------------------------------------------#
 # class SeparableConv2D(tf.keras.layers.SeparableConv2D):
 #     """
