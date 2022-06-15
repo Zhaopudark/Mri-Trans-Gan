@@ -10,9 +10,10 @@ import tensorflow as tf
 # from ixi.ixi_pipeline import DataPipeLine as IXIDataPipeLine
 from typeguard import typechecked
 from typing import Callable
+from datasets.brats.bratsbase import BraTSMapping
 from datasets.brats.brats_data import BraTSDataPathCollection
 from datasets.brats.brats_pipeline import BraTSBasePipeLine,BraTSDividingWrapper,BraTSPatchesWrapper
-from datasets.brats.bratsbase import BraTSData,BraTSMapping
+
 # BraTSDividingWrapper,BraTSPatchesWrapper
 class DataPipeline():
     @typechecked
@@ -92,7 +93,7 @@ class DataPipeline():
     @typechecked
     def pipeline_wrapper(self,datas:dict[str,list[str]]): # tf.data.Dataset.from_generator 传递的一定是tensor
         return tf.data.Dataset.from_tensor_slices(datas)\
-            .map(self.mapping.mapping_2,num_parallel_calls=4,deterministic=True)\
+            .map(self.mapping.mapping_patches,num_parallel_calls=4,deterministic=True)\
             .batch(self.batch_size,num_parallel_calls=4,deterministic=True)\
             .prefetch(tf.data.AUTOTUNE)
     def __call__(self):
