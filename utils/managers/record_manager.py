@@ -45,7 +45,7 @@ class RecordManager():
             saved_file = np.load(self._get_target_path(name))
             output = files_getter(saved_file)
         except KeyError:
-            saved_file = dict(**saved_file).update(zip(keys,gen_func()))
+            saved_file = dict(**saved_file)|dict(zip(keys,gen_func()))
             np.savez_compressed(self._get_target_path(name),**saved_file)
             output = files_getter(saved_file)
         except FileNotFoundError:

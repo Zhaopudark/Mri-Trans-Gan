@@ -52,10 +52,8 @@ class DataPipeline():
             axes_direction_format=("S:I","A:P","R:L"),
             record_path="D:\\Datasets\\BraTS\\BraTS2021_new\\records2",)
             d = brats.BraTSBasePipeLine(datas)
-            # self.data_pipeline = d
-            # d1 = BraTSDividingWrapper(d,dividing_rates=tuple(args['data_dividing_rates']),dividing_seed=args['data_dividing_seed'])
-            # self.data_pipeline = d1
-            self.data_pipeline = brats.BraTSPatchesWrapper(d,
+            d1 = brats.BraTSDividingWrapper(d,dividing_rates=tuple(args['data_dividing_rates']),dividing_seed=args['data_dividing_seed'])
+            self.data_pipeline = brats.BraTSPatchesWrapper(d1,
                 cut_ranges=args['cut_ranges'],
                 patch_sizes=args['patch_sizes'],
                 patch_nums=args['patch_nums'],)
@@ -75,15 +73,17 @@ class DataPipeline():
     # @staticmethod
     # def add_channel(inputs:dict[str:tf.Tensor]):
     #     return {key:value[...,tf.newaxis] for key,value in inputs.items()}  
-    @typechecked
     def pipeline_wrapper(self,datas:dict[str,list[str]]): # tf.data.Dataset.from_generator 传递的一定是tensor
         return tf.data.Dataset.from_tensor_slices(datas)\
             .map(self.mapping.mapping_patches,num_parallel_calls=4,deterministic=True)\
+            .map(self.map_func,num_parallel_calls=4,deterministic=True)\
             .batch(self.batch_size,num_parallel_calls=4,deterministic=True)\
             .prefetch(tf.data.AUTOTUNE)
+    def patch_combine_generator(self,*args,**kwargs):
+        yield from brats.BraTSMapping.stack_patches(*args,**kwargs)
     def __call__(self):
-        # return list(map(self.pipeline_wrapper,self.data_pipeline()))
-        return self.pipeline_wrapper(self.data_pipeline()),None,None
+        return list(map(self.pipeline_wrapper,self.data_pipeline()))
+        # return self.pipeline_wrapper(self.data_pipeline()),None,None
 
 if __name__ == '__main__':
     physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU')
@@ -121,19 +121,20 @@ if __name__ == '__main__':
     train_set_2,test_set_2,validation_set_2 = pipe_line_2()
     # train_set = tf.data.Dataset.range(10).map(lambda x:x).batch(2)
     # print(type(train_set))
-    # print(train_set.cardinality())
-    # print(train_set.cardinality())
+    print(train_set.cardinality())
+    print(train_set.cardinality())
     print(len(train_set))
-    for item in train_set:
-        # decoded = ast.literal_eval(str(item["name"].numpy(),encoding='utf-8'))
-        print(len(item))
-        print(item["t1"].shape,item["t1"].dtype)
-        # decoded = ast.literal_eval(str(item["t1"].numpy(),encoding='utf-8'))
-        # slices = tuple(map(lambda x:slice(x[0],x[1]+1),decoded[-1]))
-        # print(decoded)
-        # print(type(decoded))
-        # print(slices)
-        print(item["t1"].numpy().min(),item["t1"].numpy().max())
+    # for item in train_set:
+    #     # decoded = ast.literal_eval(str(item["name"].numpy(),encoding='utf-8'))
+    #     print(len(item))
+    #     print(item["t1"].shape,item["t1"].dtype)
+    #     print(item["t2"].shape,item["t2"].dtype)
+    #     print(item["t1ce"].shape,item["t1ce"].dtype)
+    #     print(item["flair"].shape,item["flair"].dtype)
+    #     print(item["mask"].shape,item["mask"].dtype)
+    #     print(item.keys())
+
+        # print(item["mask"].numpy().min(),item["t1"].numpy().max())
     
     # with tempfile.TemporaryDirectory() as dir_name:
     #     step = counters1['step']

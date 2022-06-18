@@ -128,7 +128,10 @@ class NestedDict(collections.UserDict):
         else:
             return super().__getitem__(current_key)
     
-    def get_items(self,superior_keys=None,maybe_tuple_key:str|tuple[str|tuple[str,...],...]=None,estimate_func:Callable[[tuple[str|tuple[str,...],...]],Any]=None):
+    def get_items(self,
+        superior_keys=None,maybe_tuple_key:str|tuple[str|tuple[str,...],...]=None,
+        estimate_func:Callable[[tuple[str|tuple[str,...],...]],Any]=None,
+        bar:Callable=None):
         if superior_keys is None:
             superior_keys = []
         else:
@@ -151,11 +154,13 @@ class NestedDict(collections.UserDict):
                 raise ValueError(" ")
         for current_key in current_keys:
             if self._check_leaf(current_key) and (len(keys)>1):
-                yield from self[current_key].get_items(tuple(superior_keys+[current_key]),keys[1:],estimate_func)
+                yield from self[current_key].get_items(tuple(superior_keys+[current_key]),keys[1:],estimate_func,bar)
             else:
                 try:
                     yield tuple(superior_keys+[current_key]),self[current_key].data
                 except KeyError:
+                    if bar is not None:
+                        bar()
                     if estimate_func is None:
                         pass # do not yield the data that not involved (append)
                     else:

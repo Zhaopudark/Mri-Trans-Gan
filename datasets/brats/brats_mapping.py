@@ -57,7 +57,7 @@ class BraTSMapping():
     def mapping_whole(self,data:dict[str,tf.Tensor])->dict[str,tf.Tensor]:
         keys = tuple(data.keys())[1::]
         values = tuple(data.values())
-        Tout = tuple([tf.TensorSpec(shape=[],dtype=tf.float32),]*(len(keys)-1))
+        Tout = tuple([tf.TensorSpec(shape=[],dtype=tf.float32),]*len(keys))
    
         def func(*inputs):
             name = ast.literal_eval(str(inputs[0].numpy(),encoding='UTF-8'))
@@ -72,7 +72,7 @@ class BraTSMapping():
         keys_for_return = [] 
         for key in keys:
             keys_for_return.extend((f"{key}",f"{key}_ranges"))
-        Tout = tuple([tf.TensorSpec(shape=[],dtype=tf.float32),tf.TensorSpec(shape=[],dtype=tf.int32)]*(len(keys)-1))   
+        Tout = tuple([tf.TensorSpec(shape=[],dtype=tf.float32),tf.TensorSpec(shape=[],dtype=tf.int32)]*len(keys))   
         def func(*inputs):
             name = ast.literal_eval(str(inputs[0].numpy(),encoding='UTF-8'))
             info = tuple(ast.literal_eval(str(item.numpy(),encoding='utf-8')) for item in inputs[1::])
@@ -109,11 +109,10 @@ class BraTSMapping():
     def unzip_dict(cls,data:Iterable[Iterable[Any]]):
         buf = {}
         for (kx,x,xr,xm) in data:
-            _xm = tf.maximum(xm,1)
+            _xm = tf.cast(tf.maximum(xm,1),x.dtype)
             x = tf.divide(x,_xm)
-            tf.debugging.assert_all_finite(x)
+            tf.debugging.assert_all_finite(x,message="assert_all_finite",name=None)
             tf.debugging.assert_type(x,tf.float32,message=None,name=None)
-            tf.debugging.assert_all_finite(xr)
             tf.debugging.assert_type(xr,tf.int32,message=None,name=None)
             buf[kx] = x
             buf[f"{kx}_ranges"] = xr
@@ -130,6 +129,7 @@ class BraTSMapping():
                 buf = [combine2patches(ka,a,ar,am,kb,b,br,bm) for (ka,a,ar,am),(kb,b,br,bm) in zip(base,current)]
                 base = buf
             if (i+1)%stack_count == 0:
-                yield cls.unzip_dict(base_data)
-                base_data = None
-        yield cls.unzip_dict(base_data)  
+                yield cls.unzip_dict(base)
+                base = None
+        if base is not None:
+            yield cls.unzip_dict(base)  

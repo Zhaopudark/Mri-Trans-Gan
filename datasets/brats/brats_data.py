@@ -1,7 +1,7 @@
 import os
 import itertools
 import functools
-from typing import Iterable
+from typing import Callable, Iterable
 
 from typeguard import typechecked
 
@@ -58,31 +58,37 @@ class BraTSDataPathCollector():
         self._input_path = os.path.normpath(path)
         self.data = NestedDict()
         self._load_paths(self._input_path)
-    def _load_paths(self,path:str):
+    @func_bar_injector(bar_name='loading paths...')
+    def _load_paths(self,path:str,bar:Callable=None):
         for (dir_name,_,file_list) in os.walk(path):
             for file_name in file_list:
+                if bar is not None:
+                    bar()
                 tags = bratsbase.get_tags_from_path(os.path.join(dir_name,file_name))
                 if tags is not None:
                     self.data.append(tags,os.path.join(dir_name,file_name))
         self.data.sort(key_orders=bratsbase.TAGS_ORDERS)
     @typechecked
-    def get_individual_datas(self,tags:tuple[tuple[str,...]|None,...]=None,should_existed=True):
+    @func_bar_injector(bar_name='getting datas...')
+    def get_individual_datas(self,tags:tuple[tuple[str,...]|None,...]=None,should_existed=True,bar:Callable=None):
         """
         get_individual_datas of an individual_identities
         add extra datas by shared_identities
         """
         if should_existed:
-            tag_datas = self.data.get_items(None,tags,None)
+            tag_datas = self.data.get_items(None,tags,None,bar)
         else:
             def estimate_func(tags):
                 base_tags = bratsbase.get_base_tags_from_tags(tags)
                 base_path = self.data[base_tags].data
                 return bratsbase.gen_path_from_tags(tags,base_path)
 
-            tag_datas = self.data.get_items(None,tags,estimate_func)
+            tag_datas = self.data.get_items(None,tags,estimate_func,bar)
         stamp_tag_datas = itertools.groupby(tag_datas,key=lambda tag_data:bratsbase.gen_stamp_from_tags(tag_data[0]))
         buf = []
         for stamp,tag_datas in stamp_tag_datas:
+            if bar is not None:
+                bar()
             data = {bratsbase.gen_key_tag_from_tags(tag_data[0]):tag_data[-1] for tag_data in tag_datas}
             buf.append(BraTSData(stamp,data))
         return buf

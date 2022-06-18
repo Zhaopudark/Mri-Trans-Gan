@@ -1,6 +1,6 @@
 import sys
 import os
-from models import _mri_trans_gan_model
+from models import _mri_trans_gan_model_modified
 __all__ = [ 
     'ModelSelector',
 ]
@@ -9,7 +9,7 @@ class ModelSelector():
         self.__model_name = args['model_name'].lower()
         if self.__model_name == 'mri_trans_gan':
             # self.__model = _mri_trans_gan_model.MriTransGan
-            self.__model = _mri_trans_gan_model.MriTransGan
+            self.__model = _mri_trans_gan_model_modified.MriTransGan
             # self.__model = _mri_trans_gan_model_modified.MriTransGan
         else:
             raise ValueError("Unsupported model!")
