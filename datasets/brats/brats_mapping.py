@@ -53,6 +53,8 @@ class BraTSMapping():
     def read_from_path(self,path:str)->np.ndarray:
         img,_,_ = read_nii_file(path,dtype=np.float32)
         return self._pre_process(img)
+    def add_channel(self,x):
+        return x[...,tf.newaxis]
     
     def mapping_whole(self,data:dict[str,tf.Tensor])->dict[str,tf.Tensor]:
         keys = tuple(data.keys())[1::]
@@ -65,7 +67,10 @@ class BraTSMapping():
             def gen_func()->Sequence[tf.Tensor]:
                 return tuple(map(self.read_from_path,info))
             return self._record_manager.load(name=name,keys=keys,gen_func=gen_func)
-        return dict(zip(keys,tf.py_function(func,inp=[*values],Tout=Tout)))
+        output:dict[str,tf.Tensor] = dict(zip(keys,tf.py_function(func,inp=values,Tout=Tout)))
+        for key in output.keys():
+            output[key] = self.add_channel(output[key])
+        return output
     def mapping_patches(self,data:dict[str,tf.Tensor])->dict[str,tf.Tensor]:
         keys = tuple(data.keys())[1::]
         values = tuple(data.values())
@@ -89,8 +94,11 @@ class BraTSMapping():
                     outs.extend((data[slices],tf.convert_to_tensor(single_ranges,dtype=tf.int32)))
                 return tuple(outs)
             return self._record_manager.load(name=name,keys=keys_for_store,gen_func=gen_func)
-        return dict(zip(keys_for_return,tf.py_function(func,inp=values,Tout=Tout)))
-    
+        output:dict[str,tf.Tensor] = dict(zip(keys_for_return,tf.py_function(func,inp=values,Tout=Tout)))
+        for key in output.keys():
+            if not key.endswith('_ranges'):
+                output[key] = self.add_channel(output[key])
+        return output
     @classmethod
     def zip_dict_data(cls,data:dict[str,tf.Tensor]):
         key_buf = []

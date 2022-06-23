@@ -49,7 +49,7 @@ loggers:
         level: DEBUG
         handlers: [buildingFileHandeler,console]
         propagate: yes
-    models._mri_trans_gan_model:
+    models._mri_trans_gan_model_modified:
         level: DEBUG
         handlers: [trainingFileHandeler,console]
         propagate: yes

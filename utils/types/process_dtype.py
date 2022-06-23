@@ -2,6 +2,11 @@ import ast
 import itertools
 from typing import Any,Literal,Iterable,Callable
 
+from ..operations.reduce_op import reduce_same
+
+def get_dict_list_length(x:dict[str,list]):
+    return reduce_same([len(v) for v in x.values()])
+
 def dict_flatten(maybe_nested_dict:dict[str,Any],key_separator:str='|'):
     buf = []
     for key,value in maybe_nested_dict.items():

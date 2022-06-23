@@ -43,7 +43,6 @@ class BraTSData(): # single path
     def reduce(cls,datas:Iterable):
         return  functools.reduce(cls._reduce_func,datas)
 
-
 class BraTSDataPathCollector():
     """
     This class describe a paths collection of a dataset.
@@ -92,5 +91,3 @@ class BraTSDataPathCollector():
             data = {bratsbase.gen_key_tag_from_tags(tag_data[0]):tag_data[-1] for tag_data in tag_datas}
             buf.append(BraTSData(stamp,data))
         return buf
-
-        

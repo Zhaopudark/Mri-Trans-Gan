@@ -3,16 +3,17 @@ Towards Specific Experiments
 """
 import os 
 import sys
+from numpy import iterable
 import tensorflow as tf
 # from ixi.ixi_pipeline import DataPipeLine as IXIDataPipeLine
 from typeguard import typechecked
-from typing import Callable
+from typing import Callable,Literal
 import datasets.brats as brats
-
+from utils.managers import DataIter,SynchronizedDataIter
 
 class DataPipeline():
     @typechecked
-    def __init__(self,args:dict,counters:dict) -> None:
+    def __init__(self,args:dict,counters:dict[Literal["step","epoch"],tf.Variable]) -> None:
         """
         arg: hyperparameters 
 
@@ -47,17 +48,17 @@ class DataPipeline():
             """
             path_collection = brats.BraTSDataPathCollector("D:\\Datasets\\BraTS\\BraTS2021_new")
             datas = path_collection.get_individual_datas(tags=(None,None,('t1','t2','t1ce','flair','shared'),(args['norm'],'mask')))
-            self.mapping = brats.BraTSMapping(
+            self._mapping = brats.BraTSMapping(
                 axes_format=("vertical","sagittal","coronal"),
             axes_direction_format=("S:I","A:P","R:L"),
             record_path="D:\\Datasets\\BraTS\\BraTS2021_new\\records2",)
-            d = brats.BraTSBasePipeLine(datas)
-            d1 = brats.BraTSDividingWrapper(d,dividing_rates=tuple(args['data_dividing_rates']),dividing_seed=args['data_dividing_seed'])
-            self.data_pipeline = brats.BraTSPatchesWrapper(d1,
-                cut_ranges=args['cut_ranges'],
-                patch_sizes=args['patch_sizes'],
-                patch_nums=args['patch_nums'],)
-            # t1(patch),t2(patch),t1ce(patch),flair(patch),mask(patch),m(patch mask),v(patch padding vector)            
+            data_pipeline = brats.BraTSBasePipeLine(datas)
+            data_pipeline = brats.BraTSDividingWrapper(data_pipeline,dividing_rates=tuple(args['data_dividing_rates']),dividing_seed=args['data_dividing_seed'])
+            data_pipeline = brats.BraTSPatchesWrapper(data_pipeline,cut_ranges=args['cut_ranges'],patch_sizes=args['patch_sizes'],patch_nums=args['patch_nums'])
+            datasets = list(data_pipeline())
+            self.data_pipeline =  [SynchronizedDataIter(datasets[0],counters,args['data_random_seed'],self._pipeline_wrapper)]+\
+                                   list(map(DataIter,datasets[1::],[self._pipeline_wrapper]*len(datasets[1::])))
+                             
         elif args['dataset'].lower() == 'ixi':
             # DataPipeLine = IXIDataPipeLine
             # train_path = "G:\\Datasets\\IXI\\Registration_train"
@@ -68,21 +69,21 @@ class DataPipeline():
         else:
             raise ValueError(f"Unsupported dataset {args['dataset']}")
         self.batch_size = args['batch_size']
-    def map_func(self,inputs:dict[str:tf.Tensor]):
+    def _map_func(self,inputs:dict[str:tf.Tensor]):
         return {key:value[...,tf.newaxis] for key,value in inputs.items()}  
     # @staticmethod
     # def add_channel(inputs:dict[str:tf.Tensor]):
     #     return {key:value[...,tf.newaxis] for key,value in inputs.items()}  
-    def pipeline_wrapper(self,datas:dict[str,list[str]]): # tf.data.Dataset.from_generator 传递的一定是tensor
+    def _pipeline_wrapper(self,datas:dict[str,list[str]]): # tf.data.Dataset.from_generator 传递的一定是tensor
         return tf.data.Dataset.from_tensor_slices(datas)\
-            .map(self.mapping.mapping_patches,num_parallel_calls=4,deterministic=True)\
-            .map(self.map_func,num_parallel_calls=4,deterministic=True)\
+            .map(self._mapping.mapping_patches,num_parallel_calls=4,deterministic=True)\
             .batch(self.batch_size,num_parallel_calls=4,deterministic=True)\
             .prefetch(tf.data.AUTOTUNE)
     def patch_combine_generator(self,*args,**kwargs):
         yield from brats.BraTSMapping.stack_patches(*args,**kwargs)
-    def __call__(self):
-        return list(map(self.pipeline_wrapper,self.data_pipeline()))
+    def __call__(self)->list[SynchronizedDataIter,DataIter]:
+        # return map(self.pipeline_wrapper,self.data_pipeline())
+        return self.data_pipeline
         # return self.pipeline_wrapper(self.data_pipeline()),None,None
 
 if __name__ == '__main__':
@@ -94,7 +95,7 @@ if __name__ == '__main__':
     args['dataset']= 'braTS'
     args['norm']='individual_min_max_norm'
     args['cut_ranges']=((155//2-8,155//2+7),(0,239),(0,239))
-    args['data_dividing_rates'] = (0.7,0.25,0.05)
+    args['data_dividing_rates'] = (0.7,0.2,0.1)
     args['data_dividing_seed']= 0
     args['patch_sizes']=(16,128,128)
     args['patch_nums']=(1,3,3)
@@ -119,41 +120,98 @@ if __name__ == '__main__':
     tf.keras.utils.set_random_seed(args['global_random_seed'])
     train_set,test_set,validation_set = pipe_line()
     train_set_2,test_set_2,validation_set_2 = pipe_line_2()
+    # print(train_set.cardinality())
+    # print(len(train_set))
     # train_set = tf.data.Dataset.range(10).map(lambda x:x).batch(2)
     # print(type(train_set))
-    print(train_set.cardinality())
-    print(train_set.cardinality())
-    print(len(train_set))
-    # for item in train_set:
-    #     # decoded = ast.literal_eval(str(item["name"].numpy(),encoding='utf-8'))
-    #     print(len(item))
-    #     print(item["t1"].shape,item["t1"].dtype)
-    #     print(item["t2"].shape,item["t2"].dtype)
-    #     print(item["t1ce"].shape,item["t1ce"].dtype)
-    #     print(item["flair"].shape,item["flair"].dtype)
-    #     print(item["mask"].shape,item["mask"].dtype)
-    #     print(item.keys())
+    # print(iterable(train_set))
+    # print(type(iter(train_set)))
+    # print(train_set.cardinality())
+    # print(train_set.cardinality())
+    # print(train_set.cardinality())
+    
 
+    
+    
+    # def tested(train_set):
+        
+    #     print(train_set.cardinality())
+    #     print(train_set.cardinality())
+    #     d1 = iter(train_set)
+    #     # # train_set = iter(train_set)
+    #     # # train_set = iter(train_set)
+    #     d2 = iter(iter(train_set))
+        
+    #     return d1,d2
+    #     # return dataset
+    # import timeit
+    # print(timeit.timeit('tested(train_set)',number=1,globals=globals()))
+    # print(timeit.timeit('tested(train_set)',number=1,globals=globals()))
+    # for x1,x2 in zip(*tested(train_set)):
+    #     keys1 = tuple(x1.keys())
+    #     keys2 = tuple(x1.keys())
+    #     assert keys1==keys2
+    #     for key in keys1:
+    #         tf.debugging.assert_equal(x1[key],x2[key])
+    # import progressbar
+    # from alive_progress import alive_bar
+    # # train_bar = alive_bar(train_set.cardinality(), dual_line=True, title='Alphabet')
+    # with alive_bar(train_set.cardinality(), dual_line=True, title='Alphabet') as bar:
+    for item in test_set:
+        # decoded = ast.literal_eval(str(item["name"].numpy(),encoding='utf-8'))
+        print(len(item))
+        print(item["t1"].shape,item["t1"].dtype)
+        # print(item["t1_ranges"].numpy())
+        print(item["t2"].shape,item["t2"].dtype)
+        # print(item["t2_ranges"].numpy())
+        print(item["t1ce"].shape,item["t1ce"].dtype)
+        # print(item["t1ce_ranges"].numpy())
+        print(item["flair"].shape,item["flair"].dtype)
+        # print(item["flair_ranges"].numpy())
+        print(item["mask"].shape,item["mask"].dtype)
+        print(item["mask_ranges"].shape,item["mask_ranges"].dtype)
+        print(item["mask_ranges"].numpy())
+        print(item.keys())
+       
+        break
+
+    for i,item in enumerate(test_set):
+        # decoded = ast.literal_eval(str(item["name"].numpy(),encoding='utf-8'))
+        print(len(item))
+        print(item["t1"].shape,item["t1"].dtype)
+        # print(item["t1_ranges"].numpy())
+        print(item["t2"].shape,item["t2"].dtype)
+        # print(item["t2_ranges"].numpy())
+        print(item["t1ce"].shape,item["t1ce"].dtype)
+        # print(item["t1ce_ranges"].numpy())
+        print(item["flair"].shape,item["flair"].dtype)
+        # print(item["flair_ranges"].numpy())
+        print(item["mask"].shape,item["mask"].dtype)
+        print(item["mask_ranges"].numpy())
+        print(item.keys())
+        if i>=2:
+            break
+    print(len(test_set))
         # print(item["mask"].numpy().min(),item["t1"].numpy().max())
     
     # with tempfile.TemporaryDirectory() as dir_name:
     #     step = counters1['step']
     #     epoch = counters1['epoch']
         
-        # checkpoint = tf.train.Checkpoint(counters=counters1)
-        # ckpt_manager = tf.train.CheckpointManager(checkpoint=checkpoint,directory=dir_name,max_to_keep=3,step_counter=step,checkpoint_interval=10)
-        # buf1 = []
-        # for s,datas in zip(range(step.numpy()+1,25+1),train_set):
-        #     step.assign(s)
-        #     buf1.append((s,tf.reduce_mean(datas['t1']).numpy()))
-        #     ckpt_manager.save(check_interval=True,checkpoint_number=s)
-        #     if s>=13:
-        #         break
-        # ckpt_manager.restore_or_initialize()
-        # for s,datas in zip(range(step.numpy()+1,25+1),train_set):
-        #     step.assign(s)
-        #     buf1.append((s,tf.reduce_mean(datas['t1']).numpy()))
-        #     ckpt_manager.save(check_interval=True,checkpoint_number=s)
+    #     checkpoint = tf.train.Checkpoint(counters=counters1,d=train_set)
+    #     ckpt_manager = tf.train.CheckpointManager(checkpoint=checkpoint,directory=dir_name,max_to_keep=3,step_counter=step,checkpoint_interval=10)
+    #     buf1 = []
+    #     for s,datas in zip(range(step.numpy()+1,25+1),train_set):
+    #         step.assign(s)
+    #         buf1.append((s,tf.reduce_mean(datas['t1']).numpy()))
+    #         ckpt_manager.save(check_interval=True,checkpoint_number=s)
+    #         if s>=13:
+    #             break
+    #     ckpt_manager.restore_or_initialize()
+    #     for s,datas in zip(range(step.numpy()+1,25+1),train_set):
+    #         step.assign(s)
+    #         buf1.append((s,tf.reduce_mean(datas['t1']).numpy()))
+    #         ckpt_manager.save(check_interval=True,checkpoint_number=s)
     # with tempfile.TemporaryDirectory() as dir_name:
     #     step = counters2['step']
     #     epoch = counters2['epoch']

@@ -10,7 +10,7 @@ def random_datas(datas:list|dict[str,list],random:random.Random|None=None):
                 random.shuffle(datas[key])
         else:
             random.shuffle(datas) # since datas has been shuffled, the next shuffle will not be the same
-        logging.getLogger(__name__).info(f"Random complete!,the first data is {datas[0]}")
+        logging.getLogger(__name__).info("Random complete!")
     return datas
 
 def get_random_from_seed(seed:int|None=None):

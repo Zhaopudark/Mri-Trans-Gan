@@ -2,6 +2,7 @@ import datetime
 import logging
 
 import tensorflow as tf
+import progressbar
 
 from models.networks.network_selector import NetworkSelector
 from training.optimizers.optimizer import Optimizer
@@ -85,8 +86,6 @@ class MriTransGan():
         self.metrics = MetricsConductor(_metrics) # NOTE 独立于LogsMaker之外 迫使LogsMaker只负责记录而避免设计具体的计算或者绘图细节
         self.drawer = Drawer() # NOTE 独立于LogsMaker之外 迫使LogsMaker只负责记录而避免设计具体的计算或者绘图细节           
         self.logs_maker = LogsMaker(counters_dict=self.counters_dict,path=self.logs_path)
-        self.train_bar = tf.keras.utils.Progbar(None,width=30,verbose=1,interval=0.5,stateful_metrics=None,unit_name='train_step')
-        self.validate_or_test_bar = tf.keras.utils.Progbar(None,width=30,verbose=1,interval=0.5,stateful_metrics=None,unit_name='validate_or_test_step')
     #-----------------build-------------------------#
     def build(self): 
         """
@@ -104,28 +103,30 @@ class MriTransGan():
         self.D1.summary()
     def combination(self,dataset,predict_func): # NOTE 这部分内容很繁杂 但必须写在这里 这是模型面向具体任务的细化 写在别处将导致维护和调试的时间成本太高 风险太大
         def test_step_wrapper(dataset):
+            bar = tf.keras.utils.Progbar(dataset.cardinality(),width=30,verbose=1,interval=0.5,stateful_metrics=None,unit_name='test_or_init_step')
             for item in dataset:
                 x = item['t1']
-                x_r = item['t1_ranges']
+                xr = item['t1_ranges']
                 y = item['t2']
-                y_r = item['t2_ranges']
+                yr = item['t2_ranges']
                 mask = item['mask']
-                ranges = item['mask_ranges']
-                padding_vertors = tf.cast(tf.abs(ranges[0,...,0] - tf.constant(((69,84),(0,239),(0,239)))),tf.int32)
-                m = tf.pad(tf.ones_like(mask[0,...,0],tf.float32),padding_vertors)[tf.newaxis,...,tf.newaxis]
-                v = padding_vertors
+                mr = item['mask_ranges']
+                padding_vertors = tf.cast(tf.abs(tf.squeeze(mr) - tf.constant(((69,84),(0,239),(0,239)))),tf.int32)
+                m = tf.pad(tf.ones_like(tf.squeeze(mask),tf.float32),padding_vertors)[tf.newaxis,...,tf.newaxis]
+                # v = padding_vertors
                 y_,x_ = predict_func(x=x,y=y,mask=mask,m=m)
+                bar.add(1)
                 yield {
-                        'x':x[0,...,0],
-                        'x_ranges':x_r[0,...,0],
-                        'y':y[0,...,0],
-                        'y_ranges':y_r[0,...,0],
-                        'y_':y_[0,...,0],
-                        'y__ranges':y_r[0,...,0],
-                        'x_':x_[0,...,0],
-                        'x__ranges':x_r[0,...,0],
-                        'mask':mask[0,...,0],
-                        'mask_ranges':ranges[0,...,0],
+                        'x':tf.squeeze(x),
+                        'x_ranges':tf.squeeze(xr),
+                        'y':tf.squeeze(y),
+                        'y_ranges':tf.squeeze(yr),
+                        'y_':tf.squeeze(y_),
+                        'y__ranges':tf.squeeze(yr),
+                        'x_':tf.squeeze(x_),
+                        'x__ranges':tf.squeeze(xr),
+                        'mask':tf.squeeze(mask),
+                        'mask_ranges':tf.squeeze(mr),
                         
                 }
         def combiner_wrapper(inner_gen):
@@ -246,11 +247,11 @@ class MriTransGan():
         # self.step 代表已完成的step
         # self.epoch 代表已完成的epoch
         for epoch in range(self.epoch.numpy()+1,self.epochs+1):
+            train_bar = tf.keras.utils.Progbar(self.train_set.cardinality()*self.epochs,width=30,verbose=1,interval=0.5,stateful_metrics=None,unit_name='train_step')
             for step,item in zip(range(self.step.numpy()+1,self.steps+1),self.train_set):
-                self.train_bar.add(1)
                 t1,t2,mask,ranges = item['t1'],item['t2'],item['mask'],item['mask_ranges']
-                padding_vertors = tf.cast(tf.abs(ranges[0,...,0] - tf.constant(((69,84),(0,239),(0,239)))),tf.int32)
-                m = tf.pad(tf.ones_like(mask[0,...,0],tf.float32),padding_vertors)[tf.newaxis,...,tf.newaxis]
+                padding_vertors = tf.cast(tf.abs(tf.squeeze(ranges) - tf.constant(((69,84),(0,239),(0,239)))),tf.int32)
+                m = tf.pad(tf.ones_like(tf.squeeze(mask),tf.float32),padding_vertors)[tf.newaxis,...,tf.newaxis]
                 x = t1
                 y = t2
                 mask = mask
@@ -264,6 +265,7 @@ class MriTransGan():
                 # tf.print(f"{self.step.numpy()} {step} t1 {tf.reduce_mean(t1).numpy()}")
                 self.step.assign(step) 
                 self.checkpoint.save() # 依据checkpoint 自身规则自动选择与保存 
+                train_bar.update(step)
             if self.step.numpy()>=self.steps:
                 break
             self.epoch.assign(epoch)
