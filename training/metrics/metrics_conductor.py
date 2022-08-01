@@ -1,18 +1,14 @@
-import sys
-import os
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(base)
-import tensorflow as tf 
-import psnr3d
-import ssim3d
+
+from . import psnr
+from . import ssim
 __all__ = [
     'MetricsConductor',
 ]
 def metrics_select(metric_name):
     if metric_name == 'psnr3d':
-        return psnr3d.Psnr3D() 
+        return psnr.PeakSignal2NoiseRatio3D() 
     elif metric_name == 'ssim3d':
-        return ssim3d.Ssim3D()
+        return ssim.Ssim3D()
     else:
         raise ValueError(f"Unsupported metric {metric_name}") 
 
@@ -57,6 +53,6 @@ class MetricsConductorV2():
     针对批量数据：
         
     """
-    def __init__(self) -> None:
+    def __init__(self,metrics_name_list:list[str]) -> None:
         pass
-        
+

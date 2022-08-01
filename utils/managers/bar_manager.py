@@ -9,7 +9,6 @@ from alive_progress import alive_bar
 from typeguard import typechecked
 from tensorflow.keras.utils import Progbar
 
-
 @typechecked
 def func_bar_injector(func:Callable=None,total_number:int=None,bar_name:str='UnknownBar'):
     if func is None:

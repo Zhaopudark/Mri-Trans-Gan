@@ -31,7 +31,7 @@ handlers:
         filename: '%logs/training/training_log.log'
         <<: *fileHandelerBasicConfigs
     fileHandeler:
-        filename: 'untitled.log'
+        filename: './logs/untitled.log'
         <<: *fileHandelerBasicConfigs
     console:
         <<: *consoleHanderBasicConfigs

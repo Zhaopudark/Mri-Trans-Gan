@@ -9,12 +9,8 @@
 构建若干装饰器 输入为rec_loss x x_ y y_ 
 返回对应的
 """
-import sys
-import os
 import tensorflow as tf
-import numpy as np 
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(base,'../../'))
+
 from models.blocks.vgg import PerceptualLossExtractor
 from training.losses._image_losses import MeanVolumeGradientError
 __all__ = [

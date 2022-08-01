@@ -8,7 +8,7 @@ class ListContainer(collections.UserList):
     def __init__(self,data) -> None:
         if isinstance(data,ListContainer):
             super().__init__(data.data)
-        elif isinstance(data,list): # 可能用户本就希望存储该列表 为了保持其完整性 打包成元组后存储
+        elif isinstance(data,list): # 可能用户本就希望存储该列表 为了保持其完整性 打包后存储
             super().__init__(data)
         else:
             super().__init__([data])
@@ -65,6 +65,13 @@ class DictList(collections.UserDict):
  
 class NestedDict(collections.UserDict):
     """
+    我应当完善这个NestedDict 
+    提供
+        __init__
+        append
+        get_items
+        sort()
+
     {
         names:{keys:values}
     }
@@ -130,8 +137,7 @@ class NestedDict(collections.UserDict):
     
     def get_items(self,
         superior_keys=None,maybe_tuple_key:str|tuple[str|tuple[str,...],...]=None,
-        estimate_func:Callable[[tuple[str|tuple[str,...],...]],Any]=None,
-        bar:Callable=None):
+        estimate_func:Callable[[tuple[str|tuple[str,...],...]],Any]=None):
         if superior_keys is None:
             superior_keys = []
         else:
@@ -154,13 +160,11 @@ class NestedDict(collections.UserDict):
                 raise ValueError(" ")
         for current_key in current_keys:
             if self._check_leaf(current_key) and (len(keys)>1):
-                yield from self[current_key].get_items(tuple(superior_keys+[current_key]),keys[1:],estimate_func,bar)
+                yield from self[current_key].get_items(tuple(superior_keys+[current_key]),keys[1:],estimate_func)
             else:
                 try:
                     yield tuple(superior_keys+[current_key]),self[current_key].data
                 except KeyError:
-                    if bar is not None:
-                        bar()
                     if estimate_func is None:
                         pass # do not yield the data that not involved (append)
                     else:

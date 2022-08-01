@@ -1,17 +1,14 @@
 """
 Transformer 相关的基本层
 """
-import sys
-import os
 import tensorflow as tf
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(base)
-from activations import Activation
-from activations import Dropout
-from initializers import initializer_slect
-from convolutions import Conv2D
-from convolutions import Conv3D
-from denses import Dense
+
+from .activations import Activation
+from .activations import Dropout
+from .initializers import initializer_slect
+from .convolutions import Conv2D
+from .convolutions import Conv3D
+from .denses import Dense
 __all__ = [ 
     "MultiHeadSelfAttention",
     "PatchEmbedding2D",

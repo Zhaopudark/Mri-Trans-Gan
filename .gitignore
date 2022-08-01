@@ -10,3 +10,4 @@
 *ckpt*
 *.ipynb_checkpoints
 *.log*
+*.vscode/*

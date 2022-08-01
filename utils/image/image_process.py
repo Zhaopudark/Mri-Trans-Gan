@@ -4,11 +4,14 @@
 """
 import os 
 import math
+from typing import Any, Generator
 import matplotlib.pyplot as plt
 from PIL import Image
 import tensorflow as tf
 import numpy as np 
 import io
+
+from typeguard import typechecked
 from utils.types_check import type_check
 __all__ = [
     'ImageSaver',
@@ -46,7 +49,7 @@ class ImageSaver():
 class Drawer():
     def __init__(self):
         pass
-    def _dict2img(self,imgs:dict):
+    def dict2img(self,imgs:dict):
         plt.switch_backend('agg') #
         img_num = len(imgs.keys())
         sub_window_w_num = math.ceil(math.sqrt(float(img_num)))
@@ -70,31 +73,56 @@ class Drawer():
         # cv2.waitKey(0)
         buf.close()
         return img #B H W C形式
-    def draw_from_dict(self,img_dict,process_func=lambda x:x):
+    # def draw_from_dict(self,img_dict,process_func=lambda x:x):
+    #     """
+    #     根据传入的字典 进行绘图
+    #     要求字典格式为2重字典
+    #     {path1:{img_name1:img1,img_name2:img2,...,}
+    #      path2:{img_name1:img1,img_name2:img2,...,}
+    #      path3:{img_name1:img1,img_name2:img2,...,}
+    #      ...}
+    #     返回绘图后的字典 
+    #     {path1:img1
+    #      path2:img2
+    #      path3:img3
+    #      ...}
+    #     """
+    #     if type_check(img_dict,[dict,dict]):
+    #         buf_0 = {}
+    #         for path,imgs in img_dict.items():
+    #             buf_1 = {}
+    #             for img_name,img in imgs.items():
+    #                 buf_1[img_name] = process_func(img)
+    #             buf_0[path] = buf_1
+    #         buf_2 = {}
+    #         for path,imgs in buf_0.items():
+    #             buf_2[path] =  self._dict2img(imgs)
+    #         return buf_2
+    #     else:
+    #         raise ValueError("img_dict must be a dict(dict)")
+    @typechecked
+    def draw_from_dict(self,img_dict_gen:Generator[tuple[int,dict[str:Any]],None,None],process_func=lambda x:x):
         """
         根据传入的字典 进行绘图
         要求字典格式为2重字典
-        {path1:{img_name1:img1,img_name2:img2,...,}
-         path2:{img_name1:img1,img_name2:img2,...,}
-         path3:{img_name1:img1,img_name2:img2,...,}
-         ...}
+        (path1,{img_name1:img1,img_name2:img2,...,})
+        (path2,{img_name1:img1,img_name2:img2,...,})
+        (path3,{img_name1:img1,img_name2:img2,...,})
         返回绘图后的字典 
         {path1:img1
          path2:img2
          path3:img3
          ...}
         """
-        if type_check(img_dict,[dict,dict]):
-            buf_0 = {}
-            for path,imgs in img_dict.items():
-                buf_1 = {}
-                for img_name,img in imgs.items():
-                    buf_1[img_name] = process_func(img)
-                buf_0[path] = buf_1
-            buf_2 = {}
-            for path,imgs in buf_0.items():
-                buf_2[path] =  self._dict2img(imgs)
-            return buf_2
-        else:
-            raise ValueError("img_dict must be a dict(dict)")
-    
+
+        buf_0 = {}
+        for indice,img_dict in img_dict_gen:
+            buf_1 = {}
+            for img_name,img in img_dict.items():
+                buf_1[img_name] = process_func(img)
+            buf_0[indice] = buf_1
+        buf_2 = {}
+        for path,imgs in buf_0.items():
+            buf_2[path] =  self._dict2img(imgs)
+        return buf_2
+  

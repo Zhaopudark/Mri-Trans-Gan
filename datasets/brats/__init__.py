@@ -1,3 +1,1 @@
-from .brats_mapping import BraTSMapping
-from .brats_data import BraTSDataPathCollector
-from .brats_pipeline import BraTSBasePipeLine,BraTSDividingWrapper,BraTSPatchesWrapper
+from .brats_pipeline import *

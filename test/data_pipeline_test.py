@@ -10,7 +10,7 @@ import itertools
 import functools
 from numpy import iterable, outer
 import tensorflow as tf
-from typing import Any, Callable,Iterable,Mapping,Sequence,Iterator,overload
+from typing import Any, Callable, Iterable,Mapping,Sequence,Iterator,overload
 import copy
 
 from typeguard import typechecked
@@ -26,9 +26,6 @@ physical_devices = tf.config.experimental.list_physical_devices(device_type='GPU
 tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
 import os  
-   
-    
-    
 
 if __name__ == "__main__":
     def test():
@@ -49,7 +46,7 @@ if __name__ == "__main__":
         # print(type(bdpc.data))
 
 
-        datas = bdpc.get_individual_datas(tags=(None,None,('t1','t2','t1ce','flair','shared'),('main','mask??????????')),should_existed=False)
+        datas = bdpc.get_individual_datas(tags=(None, None, ('t1', 't2', 't1ce', 'flair', 'shared'),('main','mask??????????')),should_existed=False)
         # print(type(datas))
         # for item in datas:
         #     print(item,"***********")

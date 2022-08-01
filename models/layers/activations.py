@@ -97,16 +97,6 @@ class Activation(tf.keras.layers.Layer):
                         axis = kwargs['axis']
                 tmp_kwargs ={}
                 tmp_kwargs['axis'] = axis
-            elif activation_name in ['domain_shift_sigmoid']:
-                activation_name = 'sigmoid'
-                domain = kwargs['output_domain']
-                scale = max(domain)-min(domain) #与sigmoid的0-1比较
-                offset = min(domain) #与sigmoid的0-1比较
-                tmp_kwargs ={}
-                call = activation_slect(activation_name)#摒弃原call函数 因为一定需要被重载
-                _special_flag=True
-                def activation_call(x,training):
-                    return scale*call(x,**tmp_kwargs)+offset
             else:
                 tmp_kwargs ={}
             if _special_flag:
@@ -152,11 +142,4 @@ if __name__ == '__main__':
     print(y:=dp(x,training=False))
     print(y:=dp(x,training=None))
     print(y:=dp(x))
-
-    act = Activation('domain_shift_sigmoid',output_domain=[-10.0,30.0],dtype=policy)
-    x = tf.random.normal(shape=[10,10])
-    print(y:=act(x))
-    print(act.name)
-
-
    

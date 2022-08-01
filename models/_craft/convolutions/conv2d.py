@@ -2,16 +2,11 @@
 以下卷积 反卷积层 的设计 因为keras源码自带conv不支持反射 padding 所以需要对此进行融合
 先行padding 再valid卷积 保持等价
 """
-import sys
-import os
 import tensorflow as tf
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(base)
-sys.path.append(os.path.join(base,'../'))
-from _build_helper import Reconstruction
-from normalizations import SpectralNormalization as Sn
-from activations import activation_slect
-from initializers import initializer_slect
+from .._build_helper import Reconstruction
+from ..normalizations import SpectralNormalization as Sn
+from ..activations import activation_slect
+from ..initializers import initializer_slect
 
 __all__ = [
     "Conv2D",

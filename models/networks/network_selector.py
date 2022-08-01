@@ -1,23 +1,13 @@
-from models.networks import mri_trans_gan,mri_trans_gan_v2,mri_trans_gan_v3,mri_trans_gan_v4
-__all__ = [ 
-    'NetworkSelector'
-]
+
+from . import mri_trans_gan_v5
+
 class NetworkSelector():
     def __init__(self,args):
         self._architectures = {}
         _architecture_name = args['architecture_name'].lower()
-        if _architecture_name == 'mri_trans_gan':
-            self._architectures['generator'] = mri_trans_gan.Generator
-            self._architectures['discriminator'] = mri_trans_gan.Discriminator
-        elif _architecture_name == 'mri_trans_gan_v2':
-            self._architectures['generator'] = mri_trans_gan_v2.Generator
-            self._architectures['discriminator'] = mri_trans_gan_v2.Discriminator
-        elif _architecture_name == 'mri_trans_gan_v3':
-            self._architectures['generator'] = mri_trans_gan_v3.Generator
-            self._architectures['discriminator'] = mri_trans_gan_v3.Discriminator
-        elif _architecture_name == 'mri_trans_gan_v4':
-            self._architectures['generator'] = mri_trans_gan_v4.Generator
-            self._architectures['discriminator'] = mri_trans_gan_v4.Discriminator
+        if _architecture_name == 'mri_trans_gan_v5':
+            self._architectures['generator'] = mri_trans_gan_v5.Generator
+            self._architectures['discriminator'] = mri_trans_gan_v5.Discriminator
         else:
             raise ValueError(f"Unsupported architecture {self.__architecture_name}!")
     @property

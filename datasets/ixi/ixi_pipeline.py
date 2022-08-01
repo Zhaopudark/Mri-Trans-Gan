@@ -5,8 +5,7 @@ import numpy as np
 import nibabel as nib
 from scipy import ndimage
 import random
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(base, '../'))
+
 from utils.cut_padding import index_cal,range_cal,index_list_and,index_list_or,index_list_rm_bias
 class DataPipeLine():
     def __init__(self,path,patch_size=[128,128,3],max_thick=16,sub_seq_num_list=[1,1,1],random_flag=True):

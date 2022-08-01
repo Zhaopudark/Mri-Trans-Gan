@@ -19,3 +19,13 @@ def initializer_slect(initializer_name,*args,**kwargs):
         return tf.initializers.TruncatedNormal(*args,**kwargs)
     else:
         raise ValueError("Unsupported initializers: "+initializer_name)
+
+class SingletonType(type):
+    _instances = {}
+    def __call__(cls,*args,**kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(SingletonType,cls).__call__(*args,**kwargs)
+        return cls._instances[cls]
+class GlobalInitializer(metaclass=SingletonType):
+    def __init__(self,seed=None) -> None:
+        self.seed = seed

@@ -1,11 +1,8 @@
-import collections
 import datetime
 import logging
-from sklearn import metrics
 
 import tensorflow as tf
 import progressbar
-import operator 
 
 from models.networks.network_selector import NetworkSelector
 from training.optimizers.optimizer import Optimizer
@@ -14,16 +11,11 @@ from training.losses.image_losses import DualGanReconstructionLoss
 from training.losses.image_losses import CycleConsistencyLoss
 from training.process.train_process import TrainProcess 
 from training.checkpoint.checkpoint_writer import Checkpoint
-# from training.summary.summary_maker import LogsMaker
-from utils.managers import SummaryDataCollections,TrainSummaryMaker,TestSummaryMaker
+from training.summary.summary_maker import LogsMaker
 from utils.image.image_process import Drawer
-# from training.metrics.metrics_conductor import MetricsConductor
-from training.metrics.psnr import PeakSignal2NoiseRatio3D,PeakSignal2NoiseRatio2D
-from training.metrics.ssim import StructuralSimilarity3D,StructuralSimilarity2D
+from training.metrics.metrics_conductor import MetricsConductor
 from datasets.data_pipeline import DataPipeline
-
 from typeguard import typechecked
-
 __all__ = [ 
     'MriTransGan',
 ]
@@ -41,7 +33,7 @@ class MriTransGan():
         self.dataset = DataPipeline(args,counters=self.counters_dict)
         self.train_set,self.test_set,self.validation_set = self.dataset()
         self.patch_combiner = self.dataset.patch_combine_generator
-        self.input_shape = [1,64,64,64,1]
+        self.input_shape = [1,16,128,128,1]
         #------------------------model------------------------#
         _mixed_precision = bool(args['mixed_precision'])
         if _mixed_precision:
@@ -91,19 +83,9 @@ class MriTransGan():
                                      checkpoint_interval=_checkpoint_interval,
                                      optimizers = self.optimizers_list,
                                      models = self.models_list)
-        #--------------------------metrics-------------------------#
-        self.metrics = {
-            'psnr2d':PeakSignal2NoiseRatio2D(),
-            'psnr3d':PeakSignal2NoiseRatio3D(),
-            'ssim2d':StructuralSimilarity2D(),
-            'ssim3d':StructuralSimilarity3D(),
-        }
-        # self.metrics = MetricsConductor(_metrics) # NOTE 独立于LogsMaker之外 迫使LogsMaker只负责记录而避免设计具体的计算或者绘图细节
+        self.metrics = MetricsConductor(_metrics) # NOTE 独立于LogsMaker之外 迫使LogsMaker只负责记录而避免设计具体的计算或者绘图细节
         self.drawer = Drawer() # NOTE 独立于LogsMaker之外 迫使LogsMaker只负责记录而避免设计具体的计算或者绘图细节           
-        # self.logs_maker = LogsMaker(counters_dict=self.counters_dict,path=self.logs_path)
-        self.train_summary_maker = TrainSummaryMaker(self.logs_path)
-        self.test_summary_maker = TestSummaryMaker(self.logs_path)
-
+        self.logs_maker = LogsMaker(counters_dict=self.counters_dict,path=self.logs_path)
     #-----------------build-------------------------#
     def build(self): 
         """
@@ -120,76 +102,63 @@ class MriTransGan():
         self.G1.summary()
         self.D1.summary()
     def combination(self,dataset,predict_func): # NOTE 这部分内容很繁杂 但必须写在这里 这是模型面向具体任务的细化 写在别处将导致维护和调试的时间成本太高 风险太大
-        def gen(dataset):
+        def test_step_wrapper(dataset):
             bar = tf.keras.utils.Progbar(dataset.cardinality(),width=30,verbose=1,interval=0.5,stateful_metrics=None,unit_name='test_or_init_step')
             for item in dataset:
                 x = item['t1']
                 y = item['t2']
                 mask = item['mask']
-                y_,x_ = predict_func(x=x,y=y,mask=mask)
+                y_,x_ = predict_func(x=x,y=y,mask=mask,m=None)
                 bar.add(1)
                 yield {
-                        'x':tf.squeeze(x,axis=0),
-                        'y':tf.squeeze(y,axis=0),
-                        'y_':tf.squeeze(y_,axis=0),
-                        'x_':tf.squeeze(x_,axis=0),
-                        'mask':tf.squeeze(mask,axis=0), 
-                        'total_ranges':tf.squeeze(item['total_ranges'],axis=0),
-                        'valid_ranges':tf.squeeze(item['valid_ranges'],axis=0),
-                        'patch_sizes':tf.squeeze(item['patch_sizes'],axis=0),
-                        'patch_ranges':tf.squeeze(item['patch_ranges'],axis=0),
-                        'patch_index':tf.squeeze(item['patch_index'],axis=0),
-                        'max_index':tf.squeeze(item['max_index'],axis=0),       
+                        'x':tf.squeeze(x),
+                        'y':tf.squeeze(y),
+                        'y_':tf.squeeze(y_),
+                        'x_':tf.squeeze(x_),
+                        'mask':tf.squeeze(mask),        
                 }
-        def combiner_wrapper(gen):
-            yield from self.patch_combiner(gen)
-        def post_precess_wrapper(gen):
-            def unit(x,mask):
-                x = x*mask
+        def combiner_wrapper(inner_gen):
+            def out_gen():
+                yield from inner_gen
+            def unit(x,m):
+                x = x*m
                 _min = x.numpy().min()
                 _max = x.numpy().max()
                 x = (x-_min)/(_max-_min)
-                x = x*mask
+                x = x*m
                 _min = x.numpy().min()
                 _max = x.numpy().max()
                 return x
-            for i,item in enumerate(gen):
+            for i,item in enumerate(out_gen()):
                 x  = item['x']
                 y_ = item['y_']
                 x_ = item['x_']
                 y  = item['y']
-                mask = item['mask']
-                logging.getLogger(__name__).debug(f'{i} 1x %s %s %s',x.shape,x.numpy().min(),x.numpy().max())
-                logging.getLogger(__name__).debug(f'{i} 1y_ %s %s %s',y_.shape,y_.numpy().min(),y_.numpy().max())
-                logging.getLogger(__name__).debug(f'{i} 1x_ %s %s %s',x_.shape,x_.numpy().min(),x_.numpy().max())
-                logging.getLogger(__name__).debug(f'{i} 1y %s %s %s',y.shape,y.numpy().min(),y.numpy().max())
-                x = unit(x,mask=mask)
-                y_ = unit(y_,mask=mask)
-                x_ = unit(x_,mask=mask)
-                y = unit(y,mask=mask)
-                logging.getLogger(__name__).debug(f'{i} 2x %s %s %s',x.shape,x.numpy().min(),x.numpy().max())
-                logging.getLogger(__name__).debug(f'{i} 2y_ %s %s %s',y_.shape,y_.numpy().min(),y_.numpy().max())
-                logging.getLogger(__name__).debug(f'{i} 2x_ %s %s %s',x_.shape,x_.numpy().min(),x_.numpy().max())
-                logging.getLogger(__name__).debug(f'{i} 2y %s %s %s',y.shape,y.numpy().min(),y.numpy().max())
-                yield {'x':x[tf.newaxis,...],'y_':y_[tf.newaxis,...],'x_':x_[tf.newaxis,...],'y':y[tf.newaxis,...]}
-        yield from post_precess_wrapper(combiner_wrapper(gen(dataset)))
-    def metrics_conductor(self,inputs:dict[str,tf.Tensor])->dict[str,int|float]:
-        buf = {}
-        self.metrics['psnr3d'](inputs['x'],inputs['x_'],max_val=1.0)
-        buf['x_psnr3d'] = self.metrics['psnr3d'].result().numpy()
-        self.metrics['psnr3d'](inputs['y'],inputs['y_'],max_val=1.0)
-        buf['y_psnr3d'] = self.metrics['psnr3d'].result().numpy()
-        self.metrics['ssim3d'](inputs['x'],inputs['x_'],max_val=1.0)
-        buf['x_ssim3d'] = self.metrics['ssim3d'].result().numpy()
-        self.metrics['ssim3d'](inputs['y'],inputs['y_'],max_val=1.0)
-        buf['y_ssim3d'] = self.metrics['ssim3d'].result().numpy()
-        return buf
-
+                m  = item['mask']
+                logging.getLogger(__name__).debug('1x %s %s %s',x.shape,x.numpy().min(),x.numpy().max())
+                logging.getLogger(__name__).debug('1y_ %s %s %s',y_.shape,y_.numpy().min(),y_.numpy().max())
+                logging.getLogger(__name__).debug('1x_ %s %s %s',x_.shape,x_.numpy().min(),x_.numpy().max())
+                logging.getLogger(__name__).debug('1y %s %s %s',y.shape,y.numpy().min(),y.numpy().max())
+                x = unit(x,m)
+                y_ = unit(y_,m)
+                x_ = unit(x_,m)
+                y = unit(y,m)
+                logging.getLogger(__name__).debug('2x %s %s %s',x.shape,x.numpy().min(),x.numpy().max())
+                logging.getLogger(__name__).debug('2y_ %s %s %s',y_.shape,y_.numpy().min(),y_.numpy().max())
+                logging.getLogger(__name__).debug('2x_ %s %s %s',x_.shape,x_.numpy().min(),x_.numpy().max())
+                logging.getLogger(__name__).debug('2y %s %s %s',y.shape,y.numpy().min(),y.numpy().max())
+                yield {'x':x,'y_':y_,'x_':x_,'y':y}
+        def dict_wrapper(iterable):
+            for item in iterable:
+                yield {k: v[tf.newaxis,...,tf.newaxis] for k,v in item.items()}
+        yield from dict_wrapper(combiner_wrapper(test_step_wrapper(dataset)))
     def _draw_pre_process(self,x):# 可扩展的 支持医学图像 RGB自然图像的
         if len(x.shape)==5:#'BDHWC':
             slice_len = x.shape[1]
             t= slice_len//2 # 以序列中部元素或者中部偏右元素为中心
-            return x[0,t,...,0]
+            return x[0,t,:,:,0]
+        elif len(x.shape)==4:
+            return x[0,:,:,0]
         else:
             raise ValueError(f"Unexpected shape {x.shape}!")
     class _metric_apply():
@@ -198,39 +167,47 @@ class MriTransGan():
             self.indicate = indicate
         def __call__(self,metric,images) :
             return metric(images[self.indicate[0]],images[self.indicate[1]]).numpy()
-    def validate_or_test_step(self,dataset,predict_func)->list[SummaryDataCollections]:
-        image_record = SummaryDataCollections(summary_type='image',name='slice')
-        metrics_records = None
+    def make_logs(self,dataset,predict_func,loss=None):
+        # [loss metric image]
+        log_types = []
+        log_contents = []
+        if loss is None:
+            pass 
+        else:
+            log_types.append('loss')
+            if isinstance(loss,dict):
+                log_contents.append(loss)
+            else:
+                raise ValueError()
+        log_types.append('image')
+        image_dict = {}
         for i,out_put in enumerate(self.combination(dataset,predict_func)):
-            grabed = tf.nest.map_structure(self._draw_pre_process,out_put)
-            image_record[f"{i}"] = self.drawer.dict2img(grabed)
-            metrics_single_dict = self.metrics_conductor(out_put)
-            if metrics_records is None:
-                metrics_records = [SummaryDataCollections(summary_type='scalar',name=f"{item}") for item in metrics_single_dict.keys()]
-            for metrics_record,value in zip(metrics_records,metrics_single_dict.values()):
-                metrics_record[f"{i}"] = value
-        return [image_record]+metrics_records
+            image_dict[str(i)] = out_put
+        log_contents.append(self.drawer.draw_from_dict(image_dict,process_func=self._draw_pre_process))
+        log_types.append('metric')
+        log_contents.append(self.metrics.calculate(dict_in_dict=image_dict,func_apply_list=[self._metric_apply(['x','x_']),self._metric_apply(['y','y_'])],mean=True))
+        return log_types,log_contents
     #------------------predict-------------------------#
-    def _predict_func(self,x,y,mask):
-        y_ = self.G0(in_put=[x,mask],training=False,step=self.step,epoch=self.epoch)
-        x_ = self.G1(in_put=[y,mask],training=False,step=self.step,epoch=self.epoch)
+    def _predict_func(self,x,y,mask,m):
+        y_ = self.G0(in_put=[x,m,mask],training=False,step=self.step,epoch=self.epoch)
+        x_ = self.G1(in_put=[y,m,mask],training=False,step=self.step,epoch=self.epoch)
         return y_,x_
     #------------------train-------------------------#
-    def _loss_func(self,x,y,mask):
+    def _loss_func(self,x,y,mask,m):
         # tf.print(self.step)
-        y_       = self.G0(in_put=[x,mask],training=True,step=self.step,epoch=self.epoch)
+        y_       = self.G0(in_put=[x,m,mask],training=True,step=self.step,epoch=self.epoch)
         # tf.print(tf.reduce_mean(y_),self.step)
-        D_real_0,buf_real_0 = self.D0(in_put=[y,mask],buf_flag=True,training=True,step=self.step,epoch=self.epoch)
-        D_fake_0,buf_fake_0 = self.D0(in_put=[y_,mask],buf_flag=True,training=True,step=self.step,epoch=self.epoch)
+        D_real_0,buf_real_0 = self.D0(in_put=[y,m,mask],buf_flag=True,training=True,step=self.step,epoch=self.epoch)
+        D_fake_0,buf_fake_0 = self.D0(in_put=[y_,m,mask],buf_flag=True,training=True,step=self.step,epoch=self.epoch)
         # tf.print(tf.reduce_mean(D_real_0),self.step)
         # tf.print(tf.reduce_mean(D_fake_0),self.step)
 
-        x_       = self.G1(in_put=[y,mask],training=True,step=self.step,epoch=self.epoch)
-        D_real_1,buf_real_1 = self.D1(in_put=[x,mask],buf_flag=True,training=True,step=self.step,epoch=self.epoch)
-        D_fake_1,buf_fake_1 = self.D1(in_put=[x_,mask],buf_flag=True,training=True,step=self.step,epoch=self.epoch)
+        x_       = self.G1(in_put=[y,m,mask],training=True,step=self.step,epoch=self.epoch)
+        D_real_1,buf_real_1 = self.D1(in_put=[x,m,mask],buf_flag=True,training=True,step=self.step,epoch=self.epoch)
+        D_fake_1,buf_fake_1 = self.D1(in_put=[x_,m,mask],buf_flag=True,training=True,step=self.step,epoch=self.epoch)
 
-        x__      = self.G1(in_put=[y_,mask],training=True,step=self.step,epoch=self.epoch)
-        y__      = self.G0(in_put=[x_,mask],training=True,step=self.step,epoch=self.epoch)
+        x__      = self.G1(in_put=[y_,m,mask],training=True,step=self.step,epoch=self.epoch)
+        y__      = self.G0(in_put=[x_,m,mask],training=True,step=self.step,epoch=self.epoch)
 
         cycle_loss = self.cycle_loss.call(x=x,x__=x__,y=y,y__=y__)
         rec_loss = self.rec_loss.call(x=x,x_=x_,y=y,y_=y_,xd=buf_real_1,x_d=buf_fake_1,yd=buf_real_0,y_d=buf_fake_0)
@@ -239,8 +216,8 @@ class MriTransGan():
                     self.gan_loss.generator_loss(D_real=D_real_1,D_fake=D_fake_1)+\
                     cycle_loss+rec_loss
                     
-        D_loss = self.gan_loss.discriminator_loss(D_real=D_real_0,D_fake=D_fake_0,real_samples=y,fake_samples=y_,D=self.D0)+\
-                    self.gan_loss.discriminator_loss(D_real=D_real_1,D_fake=D_fake_1,real_samples=x,fake_samples=x_,D=self.D1)
+        D_loss = self.gan_loss.discriminator_loss(D_real=D_real_0,D_fake=D_fake_0,real_samples=y,fake_samples=y_,D=self.D0,condition=m)+\
+                    self.gan_loss.discriminator_loss(D_real=D_real_1,D_fake=D_fake_1,real_samples=x,fake_samples=x_,D=self.D1,condition=m)
         # tf.print(D_loss,G_loss)
         return [D_loss,G_loss] 
     def train_step(self):
@@ -249,7 +226,7 @@ class MriTransGan():
         raise ValueError("test_step must be reload!!!")
     def train(self):
         self._checkpoint_check()
-        # tf.profiler.experimental.start(self.logs_path) # TODO
+        # tf.profiler.experimental.start(self.logs_path)
         _train_step = self.train_process.train_wrapper(
                           self._loss_func,
                           optimizer_list=[self.Do0,self.Go0],
@@ -260,19 +237,19 @@ class MriTransGan():
         for epoch in range(self.epoch.numpy()+1,self.epochs+1):
             train_bar = tf.keras.utils.Progbar(self.train_set.cardinality()*self.epochs,width=30,verbose=1,interval=0.5,stateful_metrics=None,unit_name='train_step')
             for step,item in zip(range(self.step.numpy()+1,self.steps+1),self.train_set):
-                t1,t2,mask = item['t1'],item['t2'],item['mask']
+                t1,t2,mask,ranges = item['t1'],item['t2'],item['mask'],item['mask_ranges']
+                padding_vertors = tf.cast(tf.abs(tf.squeeze(ranges) - tf.constant(((69,84),(0,239),(0,239)))),tf.int32)
+                m = tf.pad(tf.ones_like(tf.squeeze(mask),tf.float32),padding_vertors)[tf.newaxis,...,tf.newaxis]
                 x = t1
                 y = t2
                 mask = mask
+                m_m = m
                 # tf.print(tf.reduce_mean(x),tf.reduce_mean(y),tf.reduce_mean(mask),tf.reduce_mean(m_m))
-                D_loss,G_loss = _train_step(x=x,y=y,mask=mask) # NOTE _train_step
+                D_loss,G_loss = _train_step(x=x,y=y,mask=mask,m=m_m) # NOTE _train_step
                 # tf.print(self.step.numpy(),D_loss.numpy(),G_loss.numpy())
                 if (int(self.step.numpy())%self.logs_interval==0)and(int(self.step.numpy())>=1):
-                    records = self.validate_or_test_step(self.validation_set,_predict_step)
-                    self.train_summary_maker(records,step=self.step)
-
-                    # log_types,log_contents = self.make_logs(self.validation_set,_predict_step,loss={'D_loss':D_loss.numpy(),'G_loss':G_loss.numpy()})# NOTE _predict_step
-                    # self.logs_maker.wirte(training=True,log_types=log_types,log_contents=log_contents)
+                    log_types,log_contents = self.make_logs(self.validation_set,_predict_step,loss={'D_loss':D_loss.numpy(),'G_loss':G_loss.numpy()})# NOTE _predict_step
+                    self.logs_maker.wirte(training=True,log_types=log_types,log_contents=log_contents)
                 # tf.print(f"{self.step.numpy()} {step} t1 {tf.reduce_mean(t1).numpy()}")
                 self.step.assign(step) 
                 self.checkpoint.save() # 依据checkpoint 自身规则自动选择与保存 
@@ -280,7 +257,33 @@ class MriTransGan():
             if self.step.numpy()>=self.steps:
                 break
             self.epoch.assign(epoch)
-       
+        # while(True):
+        #     if (int(self.epoch.numpy())>=self.epochs)or(int(self.step.numpy())>=self.steps):#已经训练超过epochs或超过steps
+        #         self.checkpoint.save()
+        #         break
+        #     # with tf.profiler.experimental.Trace('train', step_num=self.step, _r=1):
+        #     try:
+        #         # imgs,img_masks,padding_vectors = next(train_set)
+        #         item = next(train_set)
+        #         t1,t2,mask,m,v = item['t1'],item['t2'],item['mask'],item['patch_mask'],item['patch_padding_vector']
+        #         if self._position_check():
+        #             x = t1
+        #             y = t2
+        #             mask = mask
+        #             m_m = m
+        #             # tf.print(tf.reduce_mean(x),tf.reduce_mean(y),tf.reduce_mean(mask),tf.reduce_mean(m_m))
+        #             D_loss,G_loss = _train_step(x=x,y=y,mask=mask,m=m_m) # NOTE _train_step
+        #             # tf.print(self.step.numpy(),D_loss.numpy(),G_loss.numpy())
+        #             self.step.assign_add(1)
+        #             if int(self.step.numpy())%self.logs_interval==0:
+        #                 log_types,log_contents = self.make_logs(self.validation_set,_predict_step,loss={'D_loss':D_loss.numpy(),'G_loss':G_loss.numpy()})# NOTE _predict_step
+        #                 self.logs_maker.wirte(training=True,log_types=log_types,log_contents=log_contents)
+        #             self.checkpoint.save() # 依据checkpoint 自身规则自动选择与保存  
+        #         self._shadow_step.assign_add(1)
+        #     except StopIteration:
+        #         self.epoch.assign_add(1)
+        #         self.train_dataset_iterator = iter(self.train_set)
+        # tf.profiler.experimental.stop()
     #-----------------test-------------------------#
     def _checkpoint_check(self):
         status = self.checkpoint.restore_or_initialize()
@@ -332,13 +335,13 @@ class MriTransGan():
         if status: # 存在已保存检查点
             for kept_point in self.checkpoint.checkpoints: # 2 
                 self.checkpoint.restore(kept_point)
-                records = self.validate_or_test_step(self.test_set,_predict_step)
-                self.test_summary_maker(records,step=self.step)
-
-                # log_types,log_contents = self.make_logs(self.test_set,_predict_step)
-                # self.logs_maker.wirte(training=False,log_types=log_types,log_contents=log_contents)
+                log_types,log_contents = self.make_logs(self.test_set,_predict_step)
+                self.logs_maker.wirte(training=False,log_types=log_types,log_contents=log_contents)
         else:# 不存在已保存检查点 初始测试
-            records = self.validate_or_test_step(self.test_set,_predict_step)
-            self.test_summary_maker(records,step=self.step)
-            # log_types,log_contents = self.make_logs(self.test_set,_predict_step)
-            # self.logs_maker.wirte(training=False,log_types=log_types,log_contents=log_contents)
+            log_types,log_contents = self.make_logs(self.test_set,_predict_step)
+            self.logs_maker.wirte(training=False,log_types=log_types,log_contents=log_contents)
+#--------------------------------------------------------------------------------------------------------------------------------------#
+if __name__ == '__main__':
+    a = 10
+    b = float(a)
+    print(a,b)

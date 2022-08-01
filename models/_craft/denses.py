@@ -1,12 +1,9 @@
-import sys
-import os
 import tensorflow as tf
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(base)
-from _build_helper import Reconstruction
-from normalizations import SpectralNormalization as Sn
-from activations import activation_slect
-from initializers import initializer_slect
+
+from ._build_helper import Reconstruction
+from .normalizations import SpectralNormalization as Sn
+from .activations import activation_slect
+from .initializers import initializer_slect
 __all__ = [ 
     "Reshape",
     "Dense",

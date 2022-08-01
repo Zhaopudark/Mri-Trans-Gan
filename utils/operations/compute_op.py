@@ -1,6 +1,7 @@
 import numpy as np
 import tensorflow as tf  
 
+
 def np_zero_close(x:np.ndarray):
     _where = np.isclose(x,0.0,rtol=1e-05,atol=1e-08,equal_nan=False)# 与0比较 其余取默认值(默认nan与nan不相等 返回false,nan与非nan不相等,返回false)
     x[_where]=0
@@ -56,3 +57,12 @@ def combine2patches(ka:str,a:tf.Tensor,ar:tf.Tensor,am:tf.Tensor,kb:str,b:tf.Ten
     new_am = tf.pad(am,ar_padding, mode='CONSTANT', constant_values=0, name=None)
     new_bm = tf.pad(bm,br_padding, mode='CONSTANT', constant_values=0, name=None)
     return ka,new_a+new_b,tf.stack([out_range_l,out_range_r],axis=-1),new_am+new_bm
+def extend_to(x,patch_ranges,total_ranges):
+    padding_vectors = [[min(inner_range)-min(outer_range),max(outer_range)-max(inner_range)] for outer_range,inner_range in zip(total_ranges,patch_ranges)]
+    return tf.pad(x,padding_vectors,"CONSTANT")
+    
+def mse(y_true:tf.Tensor,y_pred:tf.Tensor):
+    axis = list(range(1,tf.rank(y_true)))
+    return tf.reduce_mean(tf.math.square(y_true-y_pred),axis=axis)
+
+

@@ -69,6 +69,7 @@ class TrainProcess():
             wrappered_func = tf.function(predict_func)
         return wrappered_func
 
+
 if __name__ =='__main__':
     def fun1(x):
         print('func1')

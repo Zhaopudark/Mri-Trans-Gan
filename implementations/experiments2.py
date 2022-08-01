@@ -34,7 +34,7 @@ class ArgsPlus():
                 value = flatten(value)
                 return ("-").join([self._stamp_shorter(key,item) for item in value])
             case str(value):
-                return ("-").join(value.split('_'))
+                return ("-").join(value.split('_')).replace(':','-')
             case float(value)|int(value) if not isinstance(value,bool):
                 return str(value)
             case bool(value): #约定bool型为store——true 所以以key作为stamp
@@ -95,9 +95,14 @@ def get_args(arg_path:str)->dict:
     df_group.add_argument("--data_random_seed",type=int)
     df_group.add_argument("--data_dividing_rates",type=get_tuple_from_str)
     df_group.add_argument("--data_dividing_seed",type=int)
+
     df_group.add_argument("--norm",choices=['min_max_norm','z_score_norm','z_score_and_min_max_norm','individual_min_max_norm'],type=str.lower,default='individual_min_max_norm')
     df_group.add_argument("--raw_data_format",type=str,choices=['DHW','HWD'])
-    df_group.add_argument("--cut_ranges",type=get_tuple_from_str,metavar=tuple[tuple[int,int],...],help="should in the same `length` with raw_data_format")
+    # df_group.add_argument("--cut_ranges",type=get_tuple_from_str,metavar=tuple[tuple[int,int],...],help="should in the same `length` with raw_data_format")
+    df_group.add_argument("--axes_format",type=get_tuple_from_str,metavar=tuple[str,...])
+    df_group.add_argument("--axes_direction_format",type=get_tuple_from_str,metavar=tuple[str,...])
+    df_group.add_argument("--use_patch",action='store_true',default=True)
+    df_group.add_argument("--overlap_tolerances",type=get_tuple_from_str,metavar=tuple[tuple[float,float],...])
     df_group.add_argument("--patch_sizes",type=get_tuple_from_str,metavar=tuple[int,...],help="should in the same `length` with raw_data_format")
     df_group.add_argument("--batch_size",type=int,default=1)
     df_group.add_argument("--patch_nums",type=get_tuple_from_str,metavar=tuple[int,...],help="should in the same `length` with raw_data_format")
@@ -146,7 +151,7 @@ def get_args(arg_path:str)->dict:
     #----------------------------------------------------------------------------------------#
     training_group = parser.add_argument_group('training')
     training_group.add_argument("--epochs",type=int,default=200)
-    training_group.add_argument("--steps",type=int,default=80000*2)
+    training_group.add_argument("--steps",type=int,default=80000*100)
     training_group.add_argument("--G_learning_rate",type=float,default=1e-4)
     training_group.add_argument("--D_learning_rate",type=float,default=4e-4)
     #-------------------------------------------------------------------------------------------------------------#
@@ -165,10 +170,10 @@ def get_args(arg_path:str)->dict:
     #-------------------------------------------------------------------------------------------------------------#
     subparsers = parser.add_subparsers(title='learning_rate_schedule',dest='learning_rate_schedule',help='additional help')
     subparser_1 = subparsers.add_parser('cosine_decay',allow_abbrev=False)
-    subparser_1.add_argument("--cosine_decay_steps",type=int,default=92601)
+    subparser_1.add_argument("--cosine_decay_steps",type=int,default=344250)
     subparser_1.add_argument("--cosine_alpha",type=float,default=0.0)
     subparser_2 = subparsers.add_parser('cosine_decay_restarts',allow_abbrev=False)
-    subparser_2.add_argument("--cosine_decay_restarts_first_decay_steps",type=int,default=92601//2)
+    subparser_2.add_argument("--cosine_decay_restarts_first_decay_steps",type=int,default=344250//2)
     subparser_2.add_argument("--cosine_decay_restarts_t_mul",type=float,default=2.0)
     subparser_2.add_argument("--cosine_decay_restarts_m_mul",type=float,default=0.5)
     subparser_2.add_argument("--cosine_decay_restarts_alpha",type=float,default=0.0)
@@ -190,10 +195,10 @@ def get_args(arg_path:str)->dict:
     subparser_6.add_argument("--poly_nomial_decay_cycle",action='store_true')
     subparser_7 = subparsers.add_parser('custom_decay',allow_abbrev=False)
     subparser_7.add_argument("--custom_decay_steps",type=int,default=100)
-    subparser_7.add_argument("--custom_decay_rate",type=float,default=0.98)
-    subparser_7.add_argument("--custom_decay_start_step",type=int,default=40000)
+    subparser_7.add_argument("--custom_decay_rate",type=float,default=0.995)
+    subparser_7.add_argument("--custom_decay_start_step",type=int,default=344340//2)
     subparser_7.add_argument("--custom_decay_staircase",action='store_true')
-
+    
     args_plus = ArgsPlus(args_file=f'@{arg_path}',parser=parser,args_passby=passby_set)
     weight_path = os.path.normpath(f"{args_plus.args['workspace']}\\init\\{args_plus.stamp}")
     logs_path = os.path.normpath(f"{args_plus.args['workspace']}\\{args_plus.stamp}")

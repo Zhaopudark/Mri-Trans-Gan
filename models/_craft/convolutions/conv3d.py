@@ -6,14 +6,11 @@ from re import template
 import sys
 import os
 import tensorflow as tf
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(base)
-sys.path.append(os.path.join(base,'../'))
-from _build_helper import Reconstruction
-from normalizations import SpectralNormalization as Sn
-from activations import activation_slect
-from initializers import initializer_slect
-from super_resolution import SubpixelConv3D
+from .._build_helper import Reconstruction
+from ..normalizations import SpectralNormalization as Sn
+from ..activations import activation_slect
+from ..initializers import initializer_slect
+from ..super_resolution import SubpixelConv3D
 
 __all__ = [
     "Conv3D",

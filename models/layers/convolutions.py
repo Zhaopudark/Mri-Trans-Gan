@@ -68,7 +68,7 @@ class ConvPadConcretization(tf.keras.layers.Wrapper):
         """Build `Layer`"""
         self._build_input_shape = input_shape # if superclass is not tf.keras.layers.Layer directly
         input_shape = tf.TensorShape(input_shape)
-        self.input_spec = tf.keras.layers.InputSpec(shape=[None] + input_shape[1:])
+        # self.input_spec = tf.keras.layers.InputSpec(shape=[None] + input_shape[1:])
         # input_shape is needed 
         _kernel_size = self.layer.kernel_size
         _strides = self.layer.strides

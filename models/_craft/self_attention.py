@@ -1,13 +1,10 @@
 """
 Attention 模块相关
 """
-import sys
-import os
 import tensorflow as tf
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(base)
-from convolutions.conv2d import Conv2D
-from convolutions.conv3d import Conv3D
+
+from .convolutions.conv2d import Conv2D
+from .convolutions.conv3d import Conv3D
 class ScaledPointAttention():
     def __init__(self,
                  scaling=8,

@@ -14,8 +14,7 @@ class GeneratorHelper():
         elif self.domain == [-1.0,1.0]:
             return 'tanh'
         else:
-            return 'domain_shift_sigmoid'
-            # raise ValueError("Unsupported domain")
+            raise ValueError("Unsupported domain")
  
 class DiscriminatorHelper():
     def __init__(self,name,args):

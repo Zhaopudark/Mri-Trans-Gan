@@ -1,9 +1,7 @@
 import csv
 import os
-import sys
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(base))
-from types_check import type_check
+
+from .types_check import type_check
 __all__ = [
     'CsvWriter',
 ]

@@ -1,10 +1,7 @@
-import sys
-import os
 import tensorflow as tf
-base = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(base)
-from activations import activation_slect
-from initializers import initializer_slect
+
+from .activations import activation_slect
+from .initializers import initializer_slect
 __all__ = [
     "SubpixelConv1D",
     "SubpixelConv2D",
