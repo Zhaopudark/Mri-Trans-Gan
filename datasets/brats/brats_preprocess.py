@@ -10,13 +10,12 @@ import json
 import operator
 import platform
 import functools
-from re import L
 from subprocess import check_output
-from typing import Literal,Generator
+from typing import Callable, Literal,Generator
 from typeguard import typechecked
 import numpy as np
 import tensorflow as tf
-from utils.managers import get_simple_logger
+from utils.managers import get_simple_logger,func_bar_injector
 from utils.operations import norm_min_max,norm_z_score,read_nii_file,save_nii_file,np_zero_close,np_sequence_reduce_min_max,reduce_same
 from utils.operations import get_subranges
 from datasets.brats import bratsbase
@@ -104,25 +103,27 @@ def combine_masks():
                 get_records({'modality':'^mask$','remark':'^main$'}))
     def combine_mask_infos(x,y):
         if isinstance(x,str):
-            x_img,x_affine,x_header = read_nii_file(x,dtype=np.int16)
-            y_img,y_affine,y_header = read_nii_file(y,dtype=np.int16)
+            x_img,x_affine,x_header = read_nii_file(x)
+            y_img,y_affine,y_header = read_nii_file(y)
             assert x_img.shape==y_img.shape
             assert bratsbase.is_affine_euqal(x_affine,y_affine)
             assert bratsbase.is_header_euqal(x_header,y_header)
             return np_zero_close(x_img*y_img),x_affine,x_header
         x_img,x_affine,x_header = x
-        y_img,y_affine,y_header = read_nii_file(y,dtype=np.int16)
+        y_img,y_affine,y_header = read_nii_file(y)
         assert x_img.shape==y_img.shape
         assert bratsbase.is_affine_euqal(x_affine,y_affine)
         assert bratsbase.is_header_euqal(x_header,y_header)
         return np_zero_close(x_img*y_img),x_affine,x_header
-    bar = tf.keras.utils.Progbar(len(get_records({'modality':'^mask$','remark':'^main$'})),width=30,verbose=1,interval=0.5,stateful_metrics=None,unit_name="Combining masks...")
-    for *inputs,outputs in gen():
-        assert reduce_same(inputs,map_func=lambda x:x['patient_id'])==outputs['patient_id']
-        bar.add(1)
-        mask,affine,header = functools.reduce(combine_mask_infos,[item['path'] for item in inputs])
-        save_nii_file(mask,outputs['path'],affine=affine,header=header)
-        _logger.info(outputs['path'])
+    @func_bar_injector(total=len(get_records({'modality':'^mask$','remark':'^main$'})),title="Combining masks...",backend='keras')
+    def run(bar:Callable=None):
+        for *inputs,outputs in gen():
+            assert reduce_same(inputs,map_func=lambda x:x['patient_id'])==outputs['patient_id']
+            bar()
+            mask,affine,header = functools.reduce(combine_mask_infos,[item['path'] for item in inputs])
+            save_nii_file(mask,outputs['path'],affine=affine,header=header)
+            _logger.info(outputs['path'])
+    run()
 
 @typechecked
 def norm_with_mask(foreground_offset:int|float,norm_method:str):
@@ -145,9 +146,9 @@ def norm_with_mask(foreground_offset:int|float,norm_method:str):
             _logger.warning(f"z_score 不仅将有效区域进行标准化~N({foreground_offset},1.0) 也将背景归0 有可能会影响模型性能")
             norm_func = norm_z_score
             use_global_min_max = False 
-        elif norm_method == 'z_score_and_min_max_norm':
+        elif norm_method == 'min_max_on_z_score':
             norm_func = norm_min_max
-            use_global_min_max=True
+            use_global_min_max = False
             def gen():
                 yield from zip(get_records({'modality':modality,'remark':'^z_score_norm$'}),
                         get_records({'modality':'^mask$','remark':'^main$'}),
@@ -163,7 +164,7 @@ def norm_with_mask(foreground_offset:int|float,norm_method:str):
                 for inputs,mask,outputs in gen():
                     bar.add(1)
                     _input,*_ = read_nii_file(inputs['path'])
-                    _mask,*_ = read_nii_file(mask['path'],dtype=np.int16)
+                    _mask,*_ = read_nii_file(mask['path'])
                     yield np_zero_close(_input*_mask)
             global_min_max = np_sequence_reduce_min_max(sequence_gen())
             tf.print(global_min_max)
@@ -171,10 +172,11 @@ def norm_with_mask(foreground_offset:int|float,norm_method:str):
             global_min_max = None
         bar = tf.keras.utils.Progbar(len(get_records({'modality':modality,'remark':'^main$'})),
                 width=30,verbose=1,interval=0.5,stateful_metrics=None,unit_name=f"Computing norm on `{modality}` ...")
+        
         for inputs,mask,outputs in gen():
             bar.add(1)
             _input,affine,header = read_nii_file(inputs['path'])
-            _mask,*_ = read_nii_file(mask['path'],dtype=np.int16)
+            _mask,*_ = read_nii_file(mask['path'])
             output = norm_func(x=_input,
                                 global_min_max=global_min_max,
                                 mask=_mask,
@@ -187,7 +189,7 @@ def norm_with_mask(foreground_offset:int|float,norm_method:str):
 def del_files(target_type:Literal['mask','brain','brain_mask',
                                 'individual_min_max_norm',
                                 'min_max_norm','z_score_norm',
-                                'z_score_and_min_max_norm']): # 缩减逻辑
+                                'min_max_on_z_score']): # 缩减逻辑
     if target_type == 'mask':
         del_buf = get_records({'modality':'^mask$','remark':'^main$'})
     else:
@@ -259,7 +261,7 @@ def initial_patches(
                             'PATCH_RANGES':patch_ranges,
                             'PATCH_INDEX':i,
                             'MAX_INDEX':patch_nums-1}
-            patch_path = pathlib.Path(stored_dir+'\\'+'_'.join(stamp_buf)+'.npy')
+            patch_path = pathlib.Path(stored_dir)/('_'.join(stamp_buf)+'.npy')
             insert_buf.append((*stamp_buf[:-1],i,json.dumps(patch_ranges),patch_path,json.dumps(patch_meta_data)))
     bratsbase.tb_add_delete_modify('insert ignore into tb_patches ('
                         '`patient_id`,`train_or_validate`,`modality`,'
@@ -277,34 +279,33 @@ def divide_patches(path:str):
                         (item['patient_id'],item['train_or_validate'],item['modality'],item['remark'])
                         )[0]
         if item['modality']=='mask':
-            img,*_ = read_nii_file(original['path'],dtype=np.int32)
+            img,*_ = read_nii_file(original['path'])
         else:
-            img,*_ = read_nii_file(original['path'],dtype=np.float32)
+            img,*_ = read_nii_file(original['path'])
         patch_range = json.loads(item['patch_range'])
         patch_slice = tuple(slice(x1,x2+1) for x1,x2 in patch_range)
-        save_path = pathlib.Path(f"{path}/{item['patch_path']}")
+        save_path = pathlib.Path(f"{item['patch_path']}")
         np.save(save_path,img[patch_slice])     
   
 if __name__=='__main__':
 
-
-    # initial_records(path="D:\\Datasets\\BraTS\\BraTS2021\\Datas")
-    # # bet()
+    # initial_records(path="/mnt/d/Datasets/BraTS/BraTS2022/Datas")
+    initial_records(path="d:/Datasets/BraTS/BraTS2022/Datas")
+    # bet()
     # combine_masks()
-    # del_files('z_score_and_min_max_norm')
+    # norm_with_mask(foreground_offset=0.0,norm_method='z_score_norm')
+    # norm_with_mask(foreground_offset=0.001,norm_method='min_max_on_z_score')
+    # del_files('min_max_on_z_score')
     # del_files('z_score_norm')
     # del_files('min_max_norm')
-    # preprocess.del_files('individual_min_max_norm')
-    # preprocess.del_files('mask')
-    # preprocess.del_files('brain_mask')
-    # preprocess.del_files('brain')
-    # append_meta_data()
-    initial_patches("D:\\Datasets\\BraTS\\BraTS2021\\patch_records",'individual_min_max_norm',patch_sizes=[64,64,64],patch_overlap_tolerance=((0.2,0.3),(0.2,0.3),(0.2,0.3)))
+    append_meta_data()
+    initial_patches("d:/Datasets/BraTS/BraTS2022/Datas/patch_records",'min_max_on_z_score',patch_sizes=[64,64,64],patch_overlap_tolerance=((0.2,0.3),(0.2,0.3),(0.2,0.3)))
+    # initial_patches("/mnt/d/Datasets/BraTS/BraTS2022/Datas/patch_records",'min_max_on_z_score',patch_sizes=[64,64,64],patch_overlap_tolerance=((0.2,0.3),(0.2,0.3),(0.2,0.3)))
 
     # bratsbase.tb_select('select * from tb_modalities where '
     #                     '`modality` regexp %s '
     #                     'and `remark` regexp %s order by `patient_id`',(tags_dict['modality'],tags_dict['remark']))
-    # divide_patches(path="D:\\Datasets\\BraTS\\BraTS2021\\patch_records")
+    # divide_patches(path="d:/Datasets/BraTS/BraTS2022/Datas/patch_records")
 
     # preprocess.bet()
     # preprocess.combine_masks()

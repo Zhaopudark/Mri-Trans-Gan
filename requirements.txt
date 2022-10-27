@@ -1,10 +1,15 @@
-# tensorflow
+tensorflow
 # pytorch
 alive_progress
 typeguard
-pylint 
+# pylint 
 matplotlib 
 opencv-python  
 nibabel  
 scipy 
 image
+pyyaml
+pandas
+pymysql
+cryptography
+openpyxl

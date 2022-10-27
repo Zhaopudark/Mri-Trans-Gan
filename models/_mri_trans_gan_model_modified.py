@@ -1,11 +1,7 @@
-import collections
 import datetime
 import logging
-from sklearn import metrics
 
 import tensorflow as tf
-import progressbar
-import operator 
 
 from models.networks.network_selector import NetworkSelector
 from training.optimizers.optimizer import Optimizer

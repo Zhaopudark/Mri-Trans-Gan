@@ -3,6 +3,7 @@ import os
 import logging
 from logging import handlers
 import argparse
+import pathlib
 from typeguard import typechecked
 import tensorflow as tf
 from utils.types import get_tuple_from_str,flatten
@@ -200,12 +201,12 @@ def get_args(arg_path:str)->dict:
     subparser_7.add_argument("--custom_decay_staircase",action='store_true')
     
     args_plus = ArgsPlus(args_file=f'@{arg_path}',parser=parser,args_passby=passby_set)
-    weight_path = os.path.normpath(f"{args_plus.args['workspace']}\\init\\{args_plus.stamp}")
-    logs_path = os.path.normpath(f"{args_plus.args['workspace']}\\{args_plus.stamp}")
-    args_plus.save_args(f"{logs_path}\\args.txt")
+    weight_path = str(pathlib.Path(args_plus.args['workspace'])/'init'/args_plus.stamp)[:-40]
+    logs_path = str(pathlib.Path(args_plus.args['workspace'])/args_plus.stamp)[:-40]
+    args_plus.save_args(str(pathlib.Path(logs_path)/'args.txt'))
     return args_plus.args|{'weight_path':weight_path,'logs_path':logs_path,'stamp':args_plus.stamp}
 @typechecked
-def experiment_runer(arg_path:str,logging_config_path:str):
+def experiment_runer_linux(arg_path:str,logging_config_path:str):
     args = get_args(arg_path)
     set_global_loggers(config_path=logging_config_path,target_prefix=args['logs_path'])
     logging.getLogger(__name__).info(f"Current Experiment Stamp: {args['stamp']}")
@@ -241,7 +242,7 @@ def experiment_runer(arg_path:str,logging_config_path:str):
 
 #----------------------------------------------------------------------------------------#
 if __name__ == "__main__":
-    experiment_runer()
+    experiment_runer_linux()
 #------------------------------------------------------------------------------------#
 
     

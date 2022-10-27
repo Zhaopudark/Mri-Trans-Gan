@@ -9,13 +9,13 @@ from typing import Any,Literal
 import numpy as np 
 import nibabel as nib
 
-def read_nii_file(path:str,dtype=np.int32): #np.int32确保足以承载原始数据 对于norm后的数据采用np.float32
+def read_nii_file(path:str):
     if not os.path.exists(path):
         raise FileNotFoundError(path)
     img:nib.Nifti2Image = nib.load(path)
     affine = img.affine
     header = img.header
-    img = np.array(img.dataobj[:,:,:],dtype=dtype)
+    img = np.array(img.dataobj[:,:,:],dtype=img.get_data_dtype())
     return img,affine,header
 
 def _sync_nii_header_dtype(img:np.ndarray,header=None):

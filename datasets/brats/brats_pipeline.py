@@ -303,7 +303,7 @@ if __name__ == '__main__':
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
     args = {}
     args['dataset']= 'braTS'
-    args['norm']='individual_min_max_norm'
+    args['norm']='min_max_on_z_score'
     args['cut_ranges']=((155//2-8,155//2+7),(0,239),(0,239))
     args['data_dividing_rates'] = (0.7,0.2,0.1)
     args['data_dividing_seed']= 0
@@ -337,8 +337,6 @@ if __name__ == '__main__':
     #     print(item["patch_ranges"].shape,item["patch_ranges"].dtype,item["patch_ranges"])
     #     print(item["patch_index"].shape,item["patch_index"].dtype,item["patch_index"])
     #     print(item["max_index"].shape,item["max_index"].dtype,item["max_index"])
-
-    
 
     dataset = tf.data.Dataset.from_tensor_slices(test_set).map(pipe_line.patch_map_func)
     for i,item in enumerate(BraTSPipeline.stack_patches(dataset)):

@@ -70,12 +70,11 @@ import numpy as np
 import pymysql
 import pathlib
 import os
-from utils.managers import func_bar_injector
 
 
 #----------------------------------sql config-------------------------------------------#
 def get_sql_connect():
-    return pymysql.connect(host='127.0.0.1',port=3306,user='guest',passwd='123456',database='brats',charset='utf8mb4')
+    return pymysql.connect(host='192.168.3.3',port=3306,user='guest_remote',passwd='123456',database='brats',charset='utf8mb4')
 def tb_add_delete_modify(sql:str,args:tuple=None,is_many=False):
     try:
         conn = get_sql_connect()
@@ -106,7 +105,6 @@ def tb_select(sql:str,args:tuple=None):
         conn.close()
     return tmp_tb
 
-@func_bar_injector(bar_name="Selecting Records")
 def tb_select_gen(sql:str,args:tuple=None,bar:Callable=None):
     try:
         conn = get_sql_connect()
