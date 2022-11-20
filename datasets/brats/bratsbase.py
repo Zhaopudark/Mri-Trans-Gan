@@ -74,7 +74,7 @@ import os
 
 #----------------------------------sql config-------------------------------------------#
 def get_sql_connect():
-    return pymysql.connect(host='192.168.3.3',port=3306,user='guest_remote',passwd='123456',database='brats',charset='utf8mb4')
+    return pymysql.connect(host='127.0.0.1',port=3306,user='guest_remote',passwd='123456',database='brats',charset='utf8mb4')
 def tb_add_delete_modify(sql:str,args:tuple=None,is_many=False):
     try:
         conn = get_sql_connect()

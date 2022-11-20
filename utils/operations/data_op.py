@@ -67,25 +67,27 @@ def save_nii_file(img:np.ndarray,path:str,affine=None,header=None):
 
 def _get_dividing_nums(N:int,r:list[int|float],basic_func:Literal['round','floor']='round')->list[int]:
     """
-    divide `N` elements into len(`r`) parts, according to rate in `r`, 
+    Divide `N` elements into len(`r`) parts, according to rate in `r`, 
     without repetition or omission(leaking),
-    making the divided result closest to the scale determind by `r*N` 
+    making the divided result closest to the scale determind by `r*N`.
     
     Args: 
         N: the total numbers of elements
         r: rates=[r_1,r_2,...,r_n] where r_i represent `i-th` divided part should have about r_i*N elements
-        basic_func: `round` or `floor`, two different implementations (the same output), see https://little-train.com/posts/c8ae0410.html
+        basic_func: `round` or `floor`, two different implementations (the same output), 
+                    see https://little-train.com/posts/66b1be3d.html
     Return:
-        y = [y_1,y_2,...,y_n], list of integer datas, where y_i represts the `i-th` divided part's element number, i.e., `dividing nums`
-    Provide dividing error = (|y_1-r_1*N|^p+|y_2-r_2*N|^p+...+|y_n-r_n*N|^p)^(1/p),
-    there should be 
+        y = [y_1,y_2,...,y_n], list of integer datas, where y_i represts the `i-th` divided part's 
+            element number, i.e., `dividing nums`
+    Define a dividing error = (|y_1-r_1*N|^p+|y_2-r_2*N|^p+...+|y_n-r_n*N|^p)^(1/p),
+        there should be 
         sum(y)==N and y = argmin(error)
-    According to https://little-train.com/posts/c8ae0410.html, the are 2 methods to calulate y
+    According to https://little-train.com/posts/66b1be3d.html, the are 2 methods to calulate y
     At first, there should be:
         N>=len(r)>=1
         all(0<rate<=1 for rate in r)
         sum(r)==1.0 
-    if basic_func == 'round'
+    If basic_func == 'round'
         1. calculate `x` = [x_1,x_2,...,x_n] where x_i = round(r_i*N)-r_i*N
             calculate `y` = [y_1,y_2,...,y_n] where y_i = round(r_i*N) as the esitimated y
         2. get the sorted `ranks`(indices) of x by order from `small to large`,
@@ -110,9 +112,10 @@ def _get_dividing_nums(N:int,r:list[int|float],basic_func:Literal['round','floor
         5. modify `y` = [y_1,y_2,...,y_n], where y[ranks[i]] = y[ranks[i]]+bias_list[i]
     Here the `y` is the target list of integer datas.
     Just slect y_i elements into the `i-th` divided part, we can divide N elements into n parts,
-    without repetition or omission, achieving the smallest dividing error. 
+        without repetition or omission, achieving the smallest dividing error. 
+
     NOTE For determinacy, the sorting function used should be stable.
-        Luckly, python's built-in sorted() function is a stable one,
+        Luckily, python's built-in sorted() function is a stable one,
         see https://docs.python.org/3/library/functions.html?highlight=sorted#sorted.
 
     """
@@ -150,15 +153,15 @@ def _get_dividing_nums(N:int,r:list[int|float],basic_func:Literal['round','floor
 
 def datas_dividing(datas:list[Any],rates:list[int|float],seed:int|None=None,mode:Literal['round','floor']='round')->tuple[list[Any],...]:
     """
-    Dividing a list of elements into several parts without repetition or omission(leaking), according to rates.
-    Achieve the smallest dividing error as far as possible.
+    Dividing a list of elements into several parts without repetition or omission(leaking), 
+        according to rates, to achieve the smallest dividing error as far as possible.
     Args:
         datas: input list of elements that need divide
-        rates: list of rate numbers, represtent the dividing rate, rates[i] means the i+1 part will get about len(datas)*rates[i] elements
-               more details see function `_get_dividing_nums`'s arg `r`
+        rates: list of rate numbers, represtent the dividing rate, rates[i] means the i+1 part will get about 
+               len(datas)*rates[i] elements more details see function `_get_dividing_nums`'s arg `r`
         seed: if not `None`, an independent random shuffle with `seed` will be applied to realize random dividing
-              NOTE: random is only for "which data in which parts", where the datas in a same parts should matain the original relative order,
-                    we matain this order by operating on indexes-level
+              NOTE: random is only for "which data in which parts", where the datas in a same parts should matain 
+                    the original relative order, we matain this order by operating on indexes-level
         mode: `round` or `floor`, two different implementations (the same output)
                more details see function `_get_dividing_nums`'s arg `basic_func`
     Return:
@@ -169,7 +172,7 @@ def datas_dividing(datas:list[Any],rates:list[int|float],seed:int|None=None,mode
         
     >>> datas_dividing(list(range(3)),[0.51,0.24,0.25])
     >>> ([0], [1], [2])
-    """   
+    """
     _datas = copy.deepcopy(datas)
     _datas_indexes = list(range(len(_datas)))
     if seed is not None:
